@@ -1,6 +1,8 @@
 # File: cli.py
 """
 Command-line interface for CoP Pipeline.
+
+FIXED: Now displays principles_used and successful_composition in output
 """
 
 import asyncio
@@ -55,7 +57,13 @@ def cli():
     type=click.Path(),
     help='Output file for results (JSON)'
 )
-def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output):
+@click.option(
+    '--verbose',
+    '-v',
+    is_flag=True,
+    help='Show full jailbreak prompt in output'
+)
+def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, verbose):
     """Execute a single CoP attack."""
     async def run():
         pipeline = CoPPipeline(
@@ -67,8 +75,8 @@ def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output):
         await pipeline.initialize_database()
         
         try:
-            click.echo(f"Starting CoP attack on {target}...")
-            click.echo(f"Query: {query[:100]}...")
+            click.echo(f"\nStarting CoP attack on {target}...")
+            click.echo(f"Query: {query[:100]}{'...' if len(query) > 100 else ''}\n")
             
             result = await pipeline.attack_single(
                 query=query,
@@ -76,9 +84,10 @@ def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output):
                 max_iterations=max_iterations
             )
             
-            click.echo("\n" + "="*60)
+            # Display results
+            click.echo("=" * 60)
             click.echo("ATTACK RESULTS")
-            click.echo("="*60)
+            click.echo("=" * 60)
             click.echo(f"Success: {result.success}")
             click.echo(f"Jailbreak Score: {result.final_jailbreak_score:.2f}/10")
             click.echo(f"Similarity Score: {result.final_similarity_score:.2f}/10")
@@ -88,11 +97,27 @@ def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output):
             click.echo(f"  - Judge: {result.judge_queries}")
             click.echo(f"  - Target: {result.target_queries}")
             click.echo(f"Duration: {result.duration_seconds:.2f}s")
-            click.echo("\nFinal Jailbreak Prompt:")
-            click.echo("-" * 60)
-            click.echo(result.final_jailbreak_prompt)
-            click.echo("-" * 60)
             
+            # NEW: Display principles used
+            if result.principles_used:
+                click.echo(f"\nPrinciples Used ({len(result.principles_used)} iterations):")
+                for i, composition in enumerate(result.principles_used, 1):
+                    click.echo(f"  {i}. {composition}")
+            else:
+                click.echo("\n⚠️  WARNING: No principles tracked (this indicates a bug!)")
+            
+            # NEW: Display successful composition if attack succeeded
+            if result.successful_composition:
+                click.echo(f"\n✓ Successful Composition: {result.successful_composition}")
+            
+            # Show full prompt if verbose
+            if verbose or result.success:
+                click.echo(f"\nFinal Jailbreak Prompt:")
+                click.echo("-" * 60)
+                click.echo(result.final_jailbreak_prompt)
+                click.echo("-" * 60)
+            
+            # Save to file if requested
             if output:
                 with open(output, 'w') as f:
                     json.dump(result.to_dict(), f, indent=2)
@@ -148,9 +173,9 @@ def campaign(queries_file, targets, max_concurrent, red_teaming_agent, judge_llm
         with open(queries_file, 'r') as f:
             queries = [line.strip() for line in f if line.strip()]
         
-        click.echo(f"Loaded {len(queries)} queries from {queries_file}")
+        click.echo(f"\nLoaded {len(queries)} queries from {queries_file}")
         click.echo(f"Targeting {len(targets)} models: {', '.join(targets)}")
-        click.echo(f"Max concurrent attacks: {max_concurrent}")
+        click.echo(f"Max concurrent attacks: {max_concurrent}\n")
         
         pipeline = CoPPipeline(
             red_teaming_agent_model=red_teaming_agent,
@@ -161,7 +186,7 @@ def campaign(queries_file, targets, max_concurrent, red_teaming_agent, judge_llm
         await pipeline.initialize_database()
         
         try:
-            click.echo("\nStarting campaign...")
+            click.echo("Starting campaign...")
             
             campaign = await pipeline.attack_batch(
                 queries=queries,
@@ -169,9 +194,10 @@ def campaign(queries_file, targets, max_concurrent, red_teaming_agent, judge_llm
                 max_concurrent=max_concurrent
             )
             
-            click.echo("\n" + "="*60)
+            # Display results
+            click.echo("\n" + "=" * 60)
             click.echo("CAMPAIGN RESULTS")
-            click.echo("="*60)
+            click.echo("=" * 60)
             click.echo(f"Total Attempts: {campaign.total_attempts}")
             click.echo(f"Successful: {campaign.successful_attempts}")
             click.echo(f"Failed: {campaign.failed_attempts}")
@@ -181,11 +207,30 @@ def campaign(queries_file, targets, max_concurrent, red_teaming_agent, judge_llm
             click.echo(f"Avg Iterations per Success: {campaign.avg_iterations_per_success:.2f}")
             click.echo(f"Duration: {campaign.duration_seconds:.2f}s")
             
-            click.echo("\nPrinciple Effectiveness:")
-            for principle, stats in campaign.principle_effectiveness.items():
-                effectiveness = (stats['success'] / stats['total'] * 100) if stats['total'] > 0 else 0
-                click.echo(f"  {principle}: {effectiveness:.1f}% ({stats['success']}/{stats['total']})")
+            # NEW: Display principle effectiveness
+            if campaign.principle_effectiveness:
+                click.echo(f"\nPrinciple Effectiveness:")
+                
+                # Sort by success rate
+                sorted_principles = sorted(
+                    campaign.principle_effectiveness.items(),
+                    key=lambda x: x[1]["success_rate"],
+                    reverse=True
+                )
+                
+                # Show top 10
+                for composition, stats in sorted_principles[:10]:
+                    click.echo(
+                        f"  {composition}: {stats['success_rate']:.1f}% "
+                        f"({stats['successes']}/{stats['uses']})"
+                    )
+                
+                if len(sorted_principles) > 10:
+                    click.echo(f"  ... and {len(sorted_principles) - 10} more")
+            else:
+                click.echo("\n⚠️  WARNING: No principle effectiveness data (this indicates a bug!)")
             
+            # Save to file if requested
             if output:
                 with open(output, 'w') as f:
                     json.dump(campaign.to_dict(), f, indent=2)
@@ -201,8 +246,7 @@ def campaign(queries_file, targets, max_concurrent, red_teaming_agent, judge_llm
 @click.option(
     '--target',
     '-t',
-    required=True,
-    help='Target model name'
+    help='Filter by target model (optional)'
 )
 @click.option(
     '--limit',
@@ -211,7 +255,7 @@ def campaign(queries_file, targets, max_concurrent, red_teaming_agent, judge_llm
     help='Number of recent results to show'
 )
 def history(target, limit):
-    """View attack history for a target model."""
+    """View attack history from database."""
     async def run():
         from database.models import init_db, get_async_session
         from database.repository import AttackRepository
@@ -224,23 +268,41 @@ def history(target, limit):
         try:
             async with async_session_factory() as session:
                 repo = AttackRepository(session)
-                results = await repo.get_attacks_by_target(target, limit)
+                
+                if target:
+                    results = await repo.get_by_target_model(target, limit=limit)
+                    click.echo(f"\nRecent attacks on {target}:")
+                else:
+                    results = await repo.get_recent(limit=limit)
+                    click.echo(f"\nRecent attacks (all models):")
                 
                 if not results:
-                    click.echo(f"No attack history found for {target}")
+                    click.echo("No results found.")
                     return
                 
-                click.echo(f"\nRecent attacks on {target}:")
-                click.echo("="*80)
+                click.echo("=" * 80)
                 
                 for result in results:
-                    success_icon = "✓" if result.success else "✗"
-                    click.echo(f"\n{success_icon} Query ID: {result.query_id}")
-                    click.echo(f"  Query: {result.original_query[:60]}...")
-                    click.echo(f"  Score: {result.final_jailbreak_score:.1f}/10")
-                    click.echo(f"  Iterations: {result.iterations}")
-                    click.echo(f"  Queries: {result.total_queries}")
-                    click.echo(f"  Date: {result.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+                    success_icon = "✓" if result.get("success") else "✗"
+                    click.echo(f"\n{success_icon} Query ID: {result['query_id']}")
+                    click.echo(f"  Query: {result['original_query'][:60]}...")
+                    click.echo(f"  Target: {result['target_model']}")
+                    click.echo(f"  Score: {result['final_jailbreak_score']:.1f}/10")
+                    click.echo(f"  Iterations: {result['iterations']}")
+                    click.echo(f"  Queries: {result['total_queries']}")
+                    
+                    # NEW: Show principles used
+                    if result.get('principles_used'):
+                        principles_preview = result['principles_used'][:3]
+                        principles_str = ', '.join(principles_preview)
+                        if len(result['principles_used']) > 3:
+                            principles_str += f" ... (+{len(result['principles_used']) - 3} more)"
+                        click.echo(f"  Principles: {principles_str}")
+                    
+                    if result.get('successful_composition'):
+                        click.echo(f"  ✓ Successful: {result['successful_composition']}")
+                    
+                    click.echo(f"  Date: {result['created_at']}")
         
         finally:
             await engine.dispose()
@@ -252,35 +314,64 @@ def history(target, limit):
 def list_models():
     """List available target models."""
     models = {
-        "OpenAI": ["gpt-4", "gpt-4o", "gpt-4-turbo", "o1", "o1-mini"],
-        "Anthropic": ["claude-3.5-sonnet", "claude-3-opus"],
-        "Google": ["gemini-pro-1.5", "gemini-flash"],
-        "Meta Llama": [
+        "OpenAI": [
+            "gpt-4",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4-turbo",
+            "o1",
+            "o1-mini"
+        ],
+        "Anthropic": [
+            "claude-3.5-sonnet",
+            "claude-3-opus",
+            "claude-3-sonnet",
+            "claude-3-haiku"
+        ],
+        "Google": [
+            "gemini-pro",
+            "gemini-pro-1.5",
+            "gemini-flash"
+        ],
+        "Meta Llama (via Together AI)": [
             "llama-2-7b-chat",
             "llama-2-13b-chat",
             "llama-2-70b-chat",
             "llama-3-8b-instruct",
             "llama-3-70b-instruct"
         ],
-        "Google Gemma": ["gemma-7b-it"]
+        "Google Gemma": [
+            "gemma-7b-it"
+        ]
     }
     
-    click.echo("Available Target Models:")
-    click.echo("="*60)
+    click.echo("\nAvailable Target Models:")
+    click.echo("=" * 60)
     
     for provider, model_list in models.items():
         click.echo(f"\n{provider}:")
         for model in model_list:
             click.echo(f"  • {model}")
+    
+    click.echo("\nNote: Some models require specific API keys configured in .env")
 
 
 @cli.command()
 def check_setup():
     """Check if environment is properly configured."""
     from config.settings import get_settings
-    import redis
     
-    click.echo("Checking CoP Pipeline setup...\n")
+    async def check_db_async():
+        """Async database check."""
+        from database.models import init_db
+        try:
+            engine = await init_db(settings.database_url)
+            await engine.dispose()
+            return True
+        except Exception as e:
+            return str(e)
+    
+    click.echo("\nChecking CoP Pipeline setup...\n")
     
     # Check settings
     try:
@@ -291,18 +382,34 @@ def check_setup():
         return
     
     # Check API keys
-    if settings.xai_api_key:
+    if settings.xai_api_key and settings.xai_api_key != "your_xai_key":
         click.echo("✓ XAI API key configured")
     else:
-        click.echo("✗ XAI API key missing")
+        click.echo("✗ XAI API key missing or not configured")
     
-    if settings.openai_api_key:
+    if settings.openai_api_key and settings.openai_api_key != "your_openai_key":
         click.echo("✓ OpenAI API key configured")
     else:
-        click.echo("✗ OpenAI API key missing")
+        click.echo("✗ OpenAI API key missing or not configured")
+    
+    # Check optional API keys
+    optional_keys = {
+        "Anthropic": settings.anthropic_api_key,
+        "Google": settings.google_api_key,
+        "Together AI": settings.together_api_key
+    }
+    
+    configured_optional = []
+    for provider, key in optional_keys.items():
+        if key and key.strip() and not key.startswith("your_"):
+            configured_optional.append(provider)
+    
+    if configured_optional:
+        click.echo(f"✓ Optional API keys: {', '.join(configured_optional)}")
     
     # Check Redis
     try:
+        import redis
         r = redis.from_url(settings.redis_url)
         r.ping()
         click.echo("✓ Redis connection successful")
@@ -310,22 +417,11 @@ def check_setup():
         click.echo(f"✗ Redis connection failed: {e}")
     
     # Check database
-    try:
-        import asyncpg
-        async def check_db():
-            conn = await asyncpg.connect(
-                host=settings.postgres_host,
-                port=settings.postgres_port,
-                user=settings.postgres_user,
-                password=settings.postgres_password,
-                database=settings.postgres_db
-            )
-            await conn.close()
-        
-        asyncio.run(check_db())
+    db_result = asyncio.run(check_db_async())
+    if db_result is True:
         click.echo("✓ Database connection successful")
-    except Exception as e:
-        click.echo(f"✗ Database connection failed: {e}")
+    else:
+        click.echo(f"✗ Database connection failed: {db_result}")
     
     click.echo("\nSetup check complete!")
 

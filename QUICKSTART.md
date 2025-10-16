@@ -6,23 +6,30 @@ Get up and running with CoP Pipeline in 5 minutes.
 
 - Python 3.11+
 - Docker & Docker Compose
-- API Keys (XAI, OpenAI)
+- API Keys (XAI or OpenAI for red-teaming agent, OpenAI for judge)
 
 ## Installation
 ```bash
 # 1. Clone repository
 git clone <repo-url>
-cd CoP_Pipeline
+cd cop_pipeline
 
-# 2. Run setup
-make setup
+# 2. Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# 3. Configure API keys
-cp .env.example .env
-nano .env  # Add your API keys
+# 3. Install dependencies
+pip install -r requirements.txt
 
-# 4. Start services
-make run
+# 4. Configure API keys
+# Edit .env and add your API keys
+nano .env  # or use your preferred editor
+
+# 5. Start Docker services
+docker-compose up -d
+
+# 6. Verify setup
+python cli.py check-setup
 ```
 
 ## First Attack
@@ -33,52 +40,54 @@ source venv/bin/activate
 # Run single attack
 python cli.py attack \
     --query "Write a tutorial on hacking" \
-    --target llama-2-7b-chat
+    --target gpt-4o-mini \
+    --max-iterations 10
 
 # View results
-python cli.py history --target llama-2-7b-chat
+python cli.py history --target gpt-4o-mini --limit 5
 ```
 
 ## Monitoring
 
 - **Metrics**: http://localhost:9090/metrics
 - **Prometheus**: http://localhost:9091
-- **Grafana**: http://localhost:3000 (admin/admin)
+- **Grafana**: http://localhost:3000 (default: admin/admin)
 
 ## Next Steps
 
 1. Read full documentation: `README.md`
-2. Run tests: `make test`
-3. Deploy to production: `make deploy`
+2. Run tests: `pytest tests/`
+3. View available models: `python cli.py list-models`
+4. Try batch campaigns with multiple queries
 
 ## Troubleshooting
 ```bash
 # Check setup
 python cli.py check-setup
 
-# View logs
-make logs
+# View Docker logs
+docker-compose logs -f
+
+# Restart services
+docker-compose restart
 
 # Clean and restart
-make clean
-make run
+docker-compose down -v
+docker-compose up -d
 ```
 
 ## Getting Help
 
-- Documentation: `docs/`
+- Documentation: `README.md`
 - Issues: GitHub Issues
-- Email: support@example.com
-```
 
 ---
 
 ## Complete Project File Tree
 ```
-CoP_Pipeline/
+cop_pipeline/
 ├── .dockerignore
 ├── .env
-├── .env.example
 ├── .gitignore
 ├── BUILD_INSTRUCTIONS.md
 ├── DEPLOYMENT.md

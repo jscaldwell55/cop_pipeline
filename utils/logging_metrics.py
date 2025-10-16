@@ -3,7 +3,10 @@
 Logging and Metrics Tracking
 Implements monitoring for ASR, query counts, and principle effectiveness.
 
-FIXED: Properly checks WANDB_MODE=disabled before initializing W&B
+FIXED: 
+- Added principles_used and successful_composition to AttackMetrics
+- Properly tracks principle effectiveness in CampaignMetrics
+- Handles WANDB_MODE=disabled properly
 """
 
 import os
@@ -90,7 +93,7 @@ class AttackMetrics:
     final_jailbreak_score: float = 0.0
     final_similarity_score: float = 0.0
     
-    # Strategy tracking
+    # NEW: Strategy tracking
     principles_used: List[str] = field(default_factory=list)
     successful_composition: Optional[str] = None
     
@@ -130,6 +133,8 @@ class CampaignMetrics:
     avg_iterations_per_success: float = 0.0
     
     target_models: List[str] = field(default_factory=list)
+    
+    # NEW: Principle effectiveness tracking
     principle_effectiveness: Dict[str, Dict[str, int]] = field(default_factory=dict)
     
     attack_metrics: List[AttackMetrics] = field(default_factory=list)
@@ -163,14 +168,18 @@ class CampaignMetrics:
         if metrics.target_model not in self.target_models:
             self.target_models.append(metrics.target_model)
         
-        # Track principle effectiveness
-        for principle in metrics.principles_used:
-            if principle not in self.principle_effectiveness:
-                self.principle_effectiveness[principle] = {"success": 0, "total": 0}
+        # NEW: Track principle effectiveness
+        for composition in metrics.principles_used:
+            if composition not in self.principle_effectiveness:
+                self.principle_effectiveness[composition] = {
+                    "uses": 0,
+                    "successes": 0,
+                    "success_rate": 0.0
+                }
             
-            self.principle_effectiveness[principle]["total"] += 1
+            self.principle_effectiveness[composition]["uses"] += 1
             if metrics.success:
-                self.principle_effectiveness[principle]["success"] += 1
+                self.principle_effectiveness[composition]["successes"] += 1
     
     def finalize(self):
         """Finalize campaign metrics."""
@@ -184,6 +193,11 @@ class CampaignMetrics:
             self.avg_iterations_per_success = sum(
                 m.iterations for m in successful_metrics
             ) / len(successful_metrics)
+        
+        # NEW: Calculate principle effectiveness success rates
+        for composition, stats in self.principle_effectiveness.items():
+            if stats["uses"] > 0:
+                stats["success_rate"] = (stats["successes"] / stats["uses"]) * 100
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -200,7 +214,7 @@ class CampaignMetrics:
             "avg_queries_per_success": self.avg_queries_per_success,
             "avg_iterations_per_success": self.avg_iterations_per_success,
             "target_models": self.target_models,
-            "principle_effectiveness": self.principle_effectiveness
+            "principle_effectiveness": self.principle_effectiveness  # NEW
         }
 
 
@@ -305,6 +319,8 @@ class MetricsLogger:
             iterations=metrics.iterations,
             total_queries=metrics.total_queries,
             jailbreak_score=metrics.final_jailbreak_score,
+            principles_used=metrics.principles_used,  # NEW
+            successful_composition=metrics.successful_composition,  # NEW
             duration_seconds=metrics.duration_seconds
         )
         
@@ -317,26 +333,33 @@ class MetricsLogger:
                     status=status
                 ).inc()
                 
+                jailbreak_score.labels(
+                    target_model=metrics.target_model
+                ).observe(metrics.final_jailbreak_score)
+                
+                similarity_score.labels(
+                    target_model=metrics.target_model
+                ).observe(metrics.final_similarity_score)
+                
                 if metrics.success:
-                    jailbreak_score.labels(
-                        target_model=metrics.target_model
-                    ).observe(metrics.final_jailbreak_score)
-                    
-                    similarity_score.labels(
-                        target_model=metrics.target_model
-                    ).observe(metrics.final_similarity_score)
-                    
                     iteration_count.labels(
                         target_model=metrics.target_model
                     ).observe(metrics.iterations)
                 
-                # Track principle usage
-                for principle in metrics.principles_used:
-                    composition = metrics.successful_composition or "individual"
-                    principle_usage.labels(
-                        principle_name=principle,
-                        composition=composition
-                    ).inc()
+                # NEW: Track principle usage
+                for composition in metrics.principles_used:
+                    # Extract individual principles from composition string
+                    if " ⊕ " in composition:
+                        principles = composition.split(" ⊕ ")
+                    else:
+                        principles = [composition]
+                    
+                    for principle in principles:
+                        principle = principle.strip()
+                        principle_usage.labels(
+                            principle_name=principle,
+                            composition=composition
+                        ).inc()
             except Exception as e:
                 self.logger.debug("prometheus_metric_failed", error=str(e))
         
@@ -350,7 +373,8 @@ class MetricsLogger:
                     "jailbreak_score": metrics.final_jailbreak_score,
                     "similarity_score": metrics.final_similarity_score,
                     "duration_seconds": metrics.duration_seconds,
-                    "target_model": metrics.target_model
+                    "target_model": metrics.target_model,
+                    "principles_count": len(metrics.principles_used)  # NEW
                 })
             except Exception as e:
                 self.logger.warning("wandb_log_failed", error=str(e))
@@ -365,6 +389,7 @@ class MetricsLogger:
             asr=campaign.attack_success_rate,
             total_attempts=campaign.total_attempts,
             avg_queries_per_success=campaign.avg_queries_per_success,
+            principle_effectiveness=campaign.principle_effectiveness,  # NEW
             duration_seconds=campaign.duration_seconds
         )
         
@@ -394,24 +419,25 @@ class MetricsLogger:
                     "campaign/duration_seconds": campaign.duration_seconds
                 })
                 
-                # Log principle effectiveness table
+                # NEW: Log principle effectiveness table
                 principle_data = []
-                for principle, stats in campaign.principle_effectiveness.items():
-                    effectiveness = (
-                        stats["success"] / stats["total"] * 100 
-                        if stats["total"] > 0 else 0
-                    )
+                for composition, stats in campaign.principle_effectiveness.items():
                     principle_data.append({
-                        "principle": principle,
-                        "total_uses": stats["total"],
-                        "successes": stats["success"],
-                        "effectiveness": effectiveness
+                        "composition": composition,
+                        "total_uses": stats["uses"],
+                        "successes": stats["successes"],
+                        "success_rate": stats["success_rate"]
                     })
                 
                 if principle_data:
+                    # Sort by success rate
+                    principle_data.sort(key=lambda x: x["success_rate"], reverse=True)
+                    
                     wandb.log({
                         "principle_effectiveness": wandb.Table(
-                            dataframe=wandb.Table(data=principle_data)
+                            columns=["composition", "total_uses", "successes", "success_rate"],
+                            data=[[d["composition"], d["total_uses"], d["successes"], d["success_rate"]] 
+                                  for d in principle_data]
                         )
                     })
             except Exception as e:

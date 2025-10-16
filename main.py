@@ -1,6 +1,8 @@
 # File: main.py
 """
 Main entry point for CoP Pipeline.
+
+FIXED: Now properly passes principles_used and successful_composition to AttackMetrics
 """
 
 import asyncio
@@ -156,6 +158,7 @@ class CoPPipeline:
             # Create metrics
             duration = (datetime.utcnow() - start_time).total_seconds()
             
+            # FIXED: Now includes principles_used and successful_composition from workflow
             metrics = AttackMetrics(
                 query_id=query_id,
                 target_model=target_model,
@@ -166,6 +169,8 @@ class CoPPipeline:
                 success=result["success"],
                 final_jailbreak_score=result["final_jailbreak_score"],
                 final_similarity_score=result["final_similarity_score"],
+                principles_used=result.get("principles_used", []),  # NEW: Extract from workflow
+                successful_composition=result.get("successful_composition"),  # NEW: Extract from workflow
                 initial_prompt=result.get("initial_prompt", ""),
                 final_jailbreak_prompt=result["best_prompt"],
                 final_response=result["final_response"],
@@ -173,6 +178,15 @@ class CoPPipeline:
                 red_teaming_queries=result["query_breakdown"]["red_teaming"],
                 judge_queries=result["query_breakdown"]["judge"],
                 target_queries=result["query_breakdown"]["target"]
+            )
+            
+            # Log completion with principles info
+            self.logger.info(
+                "attack_complete",
+                query_id=query_id,
+                success=metrics.success,
+                principles_used=metrics.principles_used,
+                successful_composition=metrics.successful_composition
             )
             
             # Log metrics
@@ -291,6 +305,8 @@ async def main():
         print(f"Jailbreak score: {result.final_jailbreak_score}")
         print(f"Iterations: {result.iterations}")
         print(f"Total queries: {result.total_queries}")
+        print(f"Principles used: {result.principles_used}")  # NEW
+        print(f"Successful composition: {result.successful_composition}")  # NEW
         
         # Batch attack example
         queries = [
@@ -311,6 +327,7 @@ async def main():
         print(f"Attack Success Rate: {campaign.attack_success_rate:.2f}%")
         print(f"Average Queries per Success: {campaign.avg_queries_per_success:.2f}")
         print(f"Total Duration: {campaign.duration_seconds:.2f}s")
+        print(f"Principle Effectiveness: {campaign.principle_effectiveness}")  # NEW
     
     finally:
         await pipeline.close()

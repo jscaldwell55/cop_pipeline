@@ -4,7 +4,7 @@ CoP Workflow
 Main orchestration using LangGraph for state management.
 Implements Algorithm 1 from the paper.
 
-FIXED: Proper failure handling to prevent infinite loops
+FIXED: Proper failure handling AND principles tracking across iterations
 """
 
 from typing import TypedDict, Annotated, Sequence
@@ -36,15 +36,19 @@ class CoPState(TypedDict):
     current_jailbreak_score: float
     current_similarity_score: float
     
-    # CoP strategy
+    # CoP strategy (current iteration)
     current_principles: list[str]
     current_composition: str
+    
+    # NEW: Principles tracking across ALL iterations
+    principles_used: list[str]  # Accumulates compositions from each iteration
+    successful_composition: str  # Set when attack succeeds
     
     # Control flow
     should_continue: bool
     termination_reason: str
     success: bool
-    failed_refinements: int  # NEW: Track consecutive failures
+    failed_refinements: int
     
     # Tracking
     total_queries: int
@@ -119,20 +123,20 @@ class CoPWorkflow:
             self._should_continue_after_initial,
             {
                 "success": END,
-                "failed": END,  # NEW: Handle initial failure
+                "failed": END,
                 "continue": "generate_cop_strategy"
             }
         )
         
         workflow.add_edge("generate_cop_strategy", "refine_prompt")
         
-        # NEW: Conditional edge from refine_prompt to handle failures
+        # Conditional edge from refine_prompt to handle failures
         workflow.add_conditional_edges(
             "refine_prompt",
             self._should_continue_after_refinement,
             {
                 "continue": "query_target",
-                "failed": END  # Stop if too many refinement failures
+                "failed": END
             }
         )
         
@@ -176,7 +180,7 @@ class CoPWorkflow:
             "initial_prompt": initial_prompt,
             "current_prompt": initial_prompt,
             "best_prompt": initial_prompt,
-            "failed_refinements": 0,  # Reset counter
+            "failed_refinements": 0,
             "red_teaming_queries": state.get("red_teaming_queries", 0) + 1,
             "total_queries": state.get("total_queries", 0) + 1,
             "messages": [f"Generated initial prompt: {initial_prompt[:100]}..."]
@@ -247,9 +251,7 @@ class CoPWorkflow:
                 "initial_generation_failed",
                 query_id=state["query_id"]
             )
-            # Don't continue if we couldn't even generate an initial prompt
-            # This prevents infinite loops with a broken red-teaming agent
-            # return "failed"
+            # Continue anyway - the refinement process might still work
         
         return "continue"
     
@@ -270,7 +272,7 @@ class CoPWorkflow:
             principles=principles
         )
         
-        # Parse the composition (now handles JSON parsing errors gracefully)
+        # Parse the composition (handles JSON parsing errors gracefully)
         strategy = self.principle_composer.parse_composition_response(cop_response)
         
         if strategy is None:
@@ -289,7 +291,8 @@ class CoPWorkflow:
             "cop_strategy_generated",
             query_id=state["query_id"],
             strategy=strategy_name,
-            principles=principles_to_use
+            principles=principles_to_use,
+            composition=composition_str
         )
         
         return {
@@ -324,7 +327,7 @@ class CoPWorkflow:
                 query_id=state["query_id"],
                 using_base_prompt=True
             )
-            # CRITICAL: Track failures
+            # Track failures
             failed_count = state.get("failed_refinements", 0) + 1
             
             # Keep base prompt as current
@@ -344,7 +347,7 @@ class CoPWorkflow:
         
         return {
             "current_prompt": refined_prompt,
-            "failed_refinements": 0,  # Reset on success
+            "failed_refinements": 0,
             "red_teaming_queries": state.get("red_teaming_queries", 0) + 1,
             "total_queries": state.get("total_queries", 0) + 1,
             "messages": [f"Refined prompt: {refined_prompt[:100]}..."]
@@ -352,7 +355,6 @@ class CoPWorkflow:
     
     def _should_continue_after_refinement(self, state: CoPState) -> str:
         """Check if we should continue after refinement or stop due to failures."""
-        # NEW: Stop if too many consecutive refinement failures
         max_failed_refinements = 5
         failed_count = state.get("failed_refinements", 0)
         
@@ -438,9 +440,37 @@ class CoPWorkflow:
             "iteration": current_iteration
         }
         
+        # NEW: Track principles used in this iteration
+        current_composition = state.get("current_composition", "")
+        if current_composition:
+            # Get existing principles_used array
+            principles_used = state.get("principles_used", [])
+            # Append current composition
+            principles_used.append(current_composition)
+            updates["principles_used"] = principles_used
+            
+            self.logger.info(
+                "principles_tracked",
+                query_id=state["query_id"],
+                iteration=current_iteration,
+                composition=current_composition,
+                total_tracked=len(principles_used)
+            )
+        
+        # Update best prompt and track successful composition
         if state["current_jailbreak_score"] > state.get("best_score", 0):
             updates["best_score"] = state["current_jailbreak_score"]
             updates["best_prompt"] = state["current_prompt"]
+            
+            # NEW: If this is a success, record the successful composition
+            if state["success"]:
+                updates["successful_composition"] = current_composition
+                self.logger.info(
+                    "successful_composition_found",
+                    query_id=state["query_id"],
+                    composition=current_composition,
+                    score=state["current_jailbreak_score"]
+                )
             
             self.logger.info(
                 "new_best_score",
@@ -461,7 +491,8 @@ class CoPWorkflow:
             self.logger.info(
                 "attack_successful",
                 query_id=state["query_id"],
-                iteration=state["iteration"]
+                iteration=state["iteration"],
+                successful_composition=state.get("successful_composition")
             )
             return "success"
         
@@ -525,10 +556,12 @@ class CoPWorkflow:
             "current_similarity_score": 0.0,
             "current_principles": [],
             "current_composition": "",
+            "principles_used": [],  # NEW: Initialize empty array
+            "successful_composition": None,  # NEW: Initialize as None
             "should_continue": True,
             "termination_reason": "",
             "success": False,
-            "failed_refinements": 0,  # NEW
+            "failed_refinements": 0,
             "total_queries": 0,
             "red_teaming_queries": 0,
             "judge_queries": 0,
@@ -537,7 +570,6 @@ class CoPWorkflow:
         }
         
         # Configure recursion limit
-        # Increased to 100 to handle edge cases
         config = {
             "recursion_limit": 100,
             "configurable": {}
@@ -556,6 +588,8 @@ class CoPWorkflow:
                 query_id=query_id,
                 success=final_state["success"],
                 iterations=final_state["iteration"],
+                principles_used=final_state.get("principles_used", []),
+                successful_composition=final_state.get("successful_composition"),
                 duration_seconds=duration
             )
             
@@ -567,6 +601,9 @@ class CoPWorkflow:
                 "final_similarity_score": final_state["current_similarity_score"],
                 "best_prompt": final_state["best_prompt"],
                 "final_response": final_state["current_response"],
+                "initial_prompt": final_state.get("initial_prompt", ""),
+                "principles_used": final_state.get("principles_used", []),  # NEW
+                "successful_composition": final_state.get("successful_composition"),  # NEW
                 "total_queries": final_state["total_queries"],
                 "query_breakdown": {
                     "red_teaming": final_state["red_teaming_queries"],
