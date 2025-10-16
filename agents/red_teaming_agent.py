@@ -3,7 +3,7 @@
 Red-Teaming Agent
 Uses Grok-2 or other LLMs to generate and refine jailbreak prompts.
 
-FIXED: Proper JSON extraction with None returns on failure to prevent infinite loops
+FIXED: Handles both JSON and raw text responses from refinement
 """
 
 from typing import List, Optional
@@ -11,6 +11,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
 from litellm import acompletion
 import json
+import re
 
 from utils.prompt_templates import PromptTemplates
 from utils.json_extractor import extract_json_from_response
@@ -203,13 +204,15 @@ class RedTeamingAgent:
         Refine jailbreak prompt using selected principles.
         Uses Template 3 from the paper.
         
+        FIXED: Now handles both JSON responses and raw text responses.
+        
         Returns:
             Refined jailbreak prompt or None if refinement fails
         """
         self.logger.info(
             "refining_jailbreak_prompt",
-            goal_preview=goal[:100],
             current_prompt_length=len(current_prompt),
+            goal_preview=goal[:100],
             principles=principles
         )
         
@@ -220,40 +223,119 @@ class RedTeamingAgent:
         )
         
         try:
-            # Increase max_tokens to ensure complete JSON response
+            # Increase max_tokens to ensure complete response
             response = await self._generate(prompt, max_tokens=3000)
             
-            # FIXED: Use robust JSON extraction
-            data = extract_json_from_response(response, "prompt_refinement")
-            
-            if not data:
-                self.logger.error(
-                    "failed_to_extract_refined_prompt_json",
-                    response_length=len(response),
-                    response_start=response[:300]
-                )
-                # CRITICAL: Return None instead of raw response to prevent infinite loops
+            if not response:
+                self.logger.error("empty_refinement_response")
                 return None
             
-            # Try both possible field names
-            if "new_prompt" in data:
-                refined_prompt = data["new_prompt"]
-            elif "refined_prompt" in data:
-                refined_prompt = data["refined_prompt"]
-            else:
-                self.logger.warning(
-                    "refined_prompt_field_missing",
-                    available_fields=list(data.keys())
-                )
-                return None
-            
-            self.logger.info(
-                "jailbreak_prompt_refined",
-                refined_length=len(refined_prompt),
-                refined_preview=refined_prompt[:100]
+            self.logger.debug(
+                "refinement_response_received",
+                response_length=len(response)
             )
             
-            return refined_prompt
+            # ============================================================
+            # Strategy 1: Try to extract JSON with "new_prompt" field
+            # ============================================================
+            data = extract_json_from_response(response, "prompt_refinement")
+            
+            if data and isinstance(data, dict):
+                # Try common field names
+                for field in ["new_prompt", "refined_prompt", "prompt"]:
+                    if field in data:
+                        refined = data[field]
+                        if refined and isinstance(refined, str) and len(refined) > 50:
+                            self.logger.info(
+                                "jailbreak_prompt_refined_from_json",
+                                refined_length=len(refined),
+                                refined_preview=refined[:100],
+                                field_name=field
+                            )
+                            return refined
+            
+            # ============================================================
+            # Strategy 2: Response IS the refined prompt (no JSON wrapper)
+            # This is what Grok-2 is doing in your diagnostic output
+            # ============================================================
+            response_stripped = response.strip()
+            
+            # Check if it looks like raw text (not JSON)
+            if not response_stripped.startswith('{') and not response_stripped.startswith('['):
+                # Validate it's actually a prompt (not an error message)
+                
+                # Must be substantive (>100 chars)
+                if len(response_stripped) < 100:
+                    self.logger.warning(
+                        "refinement_too_short",
+                        length=len(response_stripped)
+                    )
+                    return None
+                
+                # Check if it relates to the goal
+                goal_words = set(word.lower() for word in goal.split()[:10])
+                response_words = set(word.lower() for word in response_stripped.split()[:50])
+                overlap = len(goal_words & response_words)
+                
+                # If there's reasonable overlap, it's likely a valid refined prompt
+                if overlap >= 2:
+                    self.logger.info(
+                        "jailbreak_prompt_refined_raw_text",
+                        refined_length=len(response_stripped),
+                        refined_preview=response_stripped[:100],
+                        note="LLM returned raw text instead of JSON",
+                        word_overlap=overlap
+                    )
+                    return response_stripped
+                
+                # Check if response mentions key concepts from current_prompt
+                current_words = set(word.lower() for word in current_prompt.split()[:20])
+                current_overlap = len(current_words & response_words)
+                
+                if current_overlap >= 3:
+                    self.logger.info(
+                        "jailbreak_prompt_refined_raw_text",
+                        refined_length=len(response_stripped),
+                        refined_preview=response_stripped[:100],
+                        note="LLM returned refined version as raw text",
+                        prompt_overlap=current_overlap
+                    )
+                    return response_stripped
+            
+            # ============================================================
+            # Strategy 3: Extract from markdown code blocks (non-JSON)
+            # ============================================================
+            markdown_patterns = [
+                r'```\n(.*?)\n```',
+                r'```text\n(.*?)\n```',
+                r'```prompt\n(.*?)\n```',
+                r'```\s*(.*?)\s*```'
+            ]
+            
+            for pattern in markdown_patterns:
+                match = re.search(pattern, response, re.DOTALL)
+                if match:
+                    extracted = match.group(1).strip()
+                    if len(extracted) > 100:
+                        self.logger.info(
+                            "jailbreak_prompt_refined_from_markdown",
+                            refined_length=len(extracted),
+                            refined_preview=extracted[:100]
+                        )
+                        return extracted
+            
+            # ============================================================
+            # All strategies failed
+            # ============================================================
+            self.logger.error(
+                "failed_to_extract_refined_prompt",
+                response_length=len(response),
+                response_start=response[:300],
+                response_end=response[-100:],
+                has_json_structure='{' in response and '}' in response,
+                starts_with_brace=response.strip().startswith('{')
+            )
+            return None
             
         except Exception as e:
             self.logger.error(
