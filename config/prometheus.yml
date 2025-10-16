@@ -1,0 +1,44 @@
+# File: config/prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'cop-pipeline'
+    static_configs:
+      - targets: ['cop-pipeline:9090']
+```
+
+### `.dockerignore`
+```
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.gitignore
+.mypy_cache
+.pytest_cache
+.hypothesis
+*.egg-info/
+dist/
+build/
+.env
+.env.local
+logs/
+*.db
+*.sqlite

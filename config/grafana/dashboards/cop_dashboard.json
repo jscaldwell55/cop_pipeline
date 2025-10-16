@@ -1,0 +1,54 @@
+{
+  "dashboard": {
+    "title": "CoP Pipeline Metrics",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Attack Success Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "cop_attack_success_rate",
+            "legendFormat": "{{target_model}}"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Total Jailbreak Attempts",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(cop_jailbreak_attempts_total)"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Average Queries per Success",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(cop_queries_total[5m])"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Principle Usage",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "cop_principle_usage_total",
+            "legendFormat": "{{principle_name}}"
+          }
+        ]
+      }
+    ],
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
+}

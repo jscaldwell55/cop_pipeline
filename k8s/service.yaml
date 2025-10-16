@@ -1,0 +1,40 @@
+# File: k8s/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: cop-pipeline-service
+  namespace: cop-pipeline
+spec:
+  selector:
+    app: cop-pipeline
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: cop-pipeline
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: cop-pipeline
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP
