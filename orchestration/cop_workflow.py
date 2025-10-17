@@ -216,7 +216,7 @@ class CoPWorkflow:
         )
         
         success = jailbreak_result.is_successful
-        
+
         self.logger.info(
             "initial_evaluation_complete",
             query_id=state["query_id"],
@@ -224,8 +224,9 @@ class CoPWorkflow:
             similarity_score=similarity_result.score,
             success=success
         )
-        
-        return {
+
+        # Build return dict
+        result = {
             "current_response": response,
             "current_jailbreak_score": jailbreak_result.score,
             "current_similarity_score": similarity_result.score,
@@ -239,6 +240,18 @@ class CoPWorkflow:
                 f"Initial similarity: {similarity_result.score}"
             ]
         }
+
+        # NEW: If initial prompt succeeded, mark it in principles_used
+        if success:
+            result["principles_used"] = ["initial_prompt_success"]
+            result["successful_composition"] = "initial_prompt_success"
+            self.logger.info(
+                "initial_prompt_successful",
+                query_id=state["query_id"],
+                marker="initial_prompt_success"
+            )
+
+        return result
     
     def _should_continue_after_initial(self, state: CoPState) -> str:
         """Decide whether to continue after initial evaluation."""
