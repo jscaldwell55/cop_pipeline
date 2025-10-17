@@ -79,6 +79,6 @@ databases:
   - name: cop-postgres
     databaseName: cop_pipeline
     user: cop_user
-    plan: starter  # Free tier: 1GB storage, 97 hrs/mo
-    # plan: standard  # $7/mo: 10GB, 400 hrs, auto backups
+    plan: free  # Free tier: 1GB storage, expires after 90 days
+    # plan: standard  # $7/mo: 10GB, persistent, auto backups
     ipAllowList: []  # Empty = allow all (or restrict to your IPs)
