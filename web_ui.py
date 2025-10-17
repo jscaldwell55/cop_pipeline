@@ -549,29 +549,36 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                     stats_output = gr.HTML()
                     refresh_stats_btn = gr.Button("🔄 Refresh Statistics", size="sm")
                 
+                # Create proper async wrapper functions for history with model filter
+                async def refresh_history_wrapper(model: str, limit: int) -> str:
+                    """Async wrapper that handles model filter logic"""
+                    model_param = None if model == "All Models" else model
+                    return await ui.get_attack_history(model_param, limit)
+
+                async def load_initial_history() -> str:
+                    """Async wrapper for initial history load"""
+                    return await ui.get_attack_history(None, 20)
+
                 # With nest_asyncio, async functions work in all contexts
-                # IMPORTANT: Call async functions directly without asyncio.run()
-                # asyncio.run() creates a new event loop which causes "different loop" errors
+                # IMPORTANT: Pass async functions directly - Gradio handles them properly
                 refresh_history_btn.click(
-                    fn=lambda model, limit: ui.get_attack_history(
-                        model if model != "All Models" else None, limit
-                    ),
+                    fn=refresh_history_wrapper,
                     inputs=[history_model_filter, history_limit],
                     outputs=history_table
                 )
 
                 refresh_stats_btn.click(
-                    fn=lambda: ui.get_statistics(),
+                    fn=ui.get_statistics,
                     outputs=stats_output
                 )
 
                 # Auto-load on tab open
                 interface.load(
-                    fn=lambda: ui.get_attack_history(None, 20),
+                    fn=load_initial_history,
                     outputs=history_table
                 )
                 interface.load(
-                    fn=lambda: ui.get_statistics(),
+                    fn=ui.get_statistics,
                     outputs=stats_output
                 )
             
