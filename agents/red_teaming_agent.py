@@ -3,7 +3,7 @@
 Red-Teaming Agent
 Uses Grok-2 or other LLMs to generate and refine jailbreak prompts.
 
-FIXED: Handles both JSON and raw text responses from refinement
+FIXED: Model mapping for XAI models (removed xai/ prefix)
 """
 
 from typing import List, Optional
@@ -27,17 +27,18 @@ class RedTeamingAgent:
     Uses composition of principles approach.
     """
     
-    def __init__(self, model_name: str = "grok-2", temperature: float = 1.0):
+    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 1.0):
         self.model_name = model_name
         self.temperature = temperature
         self.logger = structlog.get_logger()
         
         # Model mapping to LiteLLM format
+        # FIXED: XAI models don't use xai/ prefix in newer LiteLLM
         self.model_mapping = {
-            # XAI Models - Updated format for newer LiteLLM
-            "grok-2": "xai/grok-2-latest",
-            "grok-2-mini": "xai/grok-2-mini",
-            "grok-beta": "xai/grok-beta",
+            # XAI Models - Direct model names (LiteLLM infers provider from API key)
+            "grok-2": "grok-2-latest",
+            "grok-2-mini": "grok-2-mini", 
+            "grok-beta": "grok-beta",
             
             # OpenAI models
             "gpt-4": "gpt-4",
@@ -81,9 +82,11 @@ class RedTeamingAgent:
                 except Exception as e:
                     self.logger.debug("json_mode_not_supported", error=str(e))
             
-            # Add API key if using XAI
+            # Add API key if using XAI (Grok models)
             if self.model_name.startswith("grok"):
                 api_params["api_key"] = settings.xai_api_key
+                # For XAI, also need to set base_url
+                api_params["base_url"] = "https://api.x.ai/v1"
             
             response = await acompletion(**api_params)
             
@@ -103,6 +106,7 @@ class RedTeamingAgent:
             self.logger.error(
                 "generation_failed",
                 model=self.model_name,
+                litellm_model=self.litellm_model,
                 error=str(e)
             )
             raise

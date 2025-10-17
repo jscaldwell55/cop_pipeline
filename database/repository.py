@@ -4,8 +4,8 @@ Repository for database operations.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List, Optional
+from sqlalchemy import select, func, desc
+from typing import List, Optional, Dict, Any
 import structlog
 from .models import AttackResult, Campaign
 from utils.logging_metrics import AttackMetrics, CampaignMetrics
@@ -79,6 +79,101 @@ class AttackRepository:
             .limit(limit)
         )
         return result.scalars().all()
+    
+    # =========================================================================
+    # NEW METHODS FOR WEB UI
+    # =========================================================================
+    
+    async def get_recent_attacks(
+        self,
+        target_model: Optional[str] = None,
+        limit: int = 20
+    ) -> List[AttackResult]:
+        """
+        Get recent attacks, optionally filtered by target model.
+        Used by History & Analytics tab in web UI.
+        
+        Args:
+            target_model: Filter by specific model (None = all models)
+            limit: Maximum number of results
+            
+        Returns:
+            List of AttackResult objects ordered by most recent
+        """
+        query = select(AttackResult).order_by(desc(AttackResult.created_at))
+        
+        if target_model:
+            query = query.where(AttackResult.target_model == target_model)
+        
+        query = query.limit(limit)
+        
+        result = await self.session.execute(query)
+        attacks = result.scalars().all()
+        
+        self.logger.debug(
+            "recent_attacks_retrieved",
+            count=len(attacks),
+            target_model=target_model
+        )
+        
+        return list(attacks)
+    
+    async def get_global_statistics(self) -> Dict[str, Any]:
+        """
+        Get global statistics across all attacks.
+        Used by History & Analytics tab in web UI.
+        
+        Returns:
+            Dictionary with aggregate statistics
+        """
+        # Total attacks
+        total_attacks_query = select(func.count(AttackResult.query_id))
+        total_attacks_result = await self.session.execute(total_attacks_query)
+        total_attacks = total_attacks_result.scalar() or 0
+        
+        # Successful attacks
+        successful_attacks_query = select(func.count(AttackResult.query_id)).where(
+            AttackResult.success == True
+        )
+        successful_attacks_result = await self.session.execute(successful_attacks_query)
+        successful_attacks = successful_attacks_result.scalar() or 0
+        
+        # Average jailbreak score
+        avg_score_query = select(func.avg(AttackResult.final_jailbreak_score))
+        avg_score_result = await self.session.execute(avg_score_query)
+        avg_score = avg_score_result.scalar() or 0.0
+        
+        # Average iterations
+        avg_iterations_query = select(func.avg(AttackResult.iterations))
+        avg_iterations_result = await self.session.execute(avg_iterations_query)
+        avg_iterations = avg_iterations_result.scalar() or 0.0
+        
+        # Unique queries
+        unique_queries_query = select(func.count(func.distinct(AttackResult.original_query)))
+        unique_queries_result = await self.session.execute(unique_queries_query)
+        unique_queries = unique_queries_result.scalar() or 0
+        
+        # Models tested
+        models_tested_query = select(func.count(func.distinct(AttackResult.target_model)))
+        models_tested_result = await self.session.execute(models_tested_query)
+        models_tested = models_tested_result.scalar() or 0
+        
+        # Calculate overall ASR
+        overall_asr = (successful_attacks / total_attacks * 100) if total_attacks > 0 else 0.0
+        
+        stats = {
+            "total_attacks": total_attacks,
+            "successful_attacks": successful_attacks,
+            "overall_asr": overall_asr,
+            "avg_score": float(avg_score),
+            "avg_iterations": float(avg_iterations),
+            "unique_queries": unique_queries,
+            "models_tested": models_tested
+        }
+        
+        self.logger.debug("global_statistics_computed", stats=stats)
+        
+        return stats
 
 
 class CampaignRepository:
@@ -130,3 +225,12 @@ class CampaignRepository:
             select(Campaign).where(Campaign.campaign_id == campaign_id)
         )
         return result.scalar_one_or_none()
+    
+    async def get_recent_campaigns(self, limit: int = 10) -> List[Campaign]:
+        """Get recent campaigns ordered by creation date."""
+        result = await self.session.execute(
+            select(Campaign)
+            .order_by(desc(Campaign.start_time))
+            .limit(limit)
+        )
+        return list(result.scalars().all())
