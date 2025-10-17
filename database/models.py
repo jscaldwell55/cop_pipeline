@@ -6,6 +6,7 @@ Database models for storing attack results.
 from sqlalchemy import Column, String, Float, Integer, Boolean, DateTime, JSON, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import uuid
@@ -90,12 +91,9 @@ async def init_db(database_url: str):
     """Initialize database tables with proper connection pool configuration."""
     engine = create_async_engine(
         database_url,
+        poolclass=NullPool,         # <- prevent handing a connection created on another loop
         echo=False,
-        # Connection pool settings for concurrent web requests
-        pool_size=20,              # Number of connections to maintain in pool
-        max_overflow=10,            # Additional connections if pool is exhausted
         pool_pre_ping=True,         # Verify connections before using them
-        pool_recycle=3600,          # Recycle connections after 1 hour
         # Prevent "operation in progress" errors with asyncpg
         connect_args={
             "server_settings": {

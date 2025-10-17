@@ -23,6 +23,7 @@ import gradio as gr
 import pandas as pd
 from main import CoPPipeline
 from database.repository import AttackRepository
+from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import get_settings
 
 # Get settings instance
@@ -67,37 +68,39 @@ class CoPWebUI:
     ) -> tuple[str, str, str]:
         """
         Run single attack and return formatted results
-        
+
         Returns:
             (status_html, results_json, history_html)
         """
         if not query.strip():
             return ("⚠️ Please enter a query", "{}", "")
-            
+
         try:
             # Update pipeline models
             self.pipeline.red_teaming_agent.model = red_teaming_agent
             self.pipeline.red_teaming_agent.litellm_model = \
                 self.pipeline.red_teaming_agent.model_mapping.get(red_teaming_agent, red_teaming_agent)
-            
+
             self.pipeline.judge_llm.model_name = judge_llm
             self.pipeline.judge_llm.litellm_model = \
                 self.pipeline.judge_llm.model_mapping.get(judge_llm, judge_llm)
-            
-            # Run attack
+
+            # Run attack - if database is enabled, this saves to DB
             result = await self.pipeline.attack_single(
                 query=query,
                 target_model=target_model,
                 max_iterations=max_iterations
             )
-            
+
             # Format results
             status_html = self._format_status(result)
             results_json = json.dumps(result.to_dict(), indent=2)
+
+            # Get history on same loop (no session passed since attack_single handles DB internally)
             history_html = await self.get_attack_history(target_model)
-            
+
             return status_html, results_json, history_html
-            
+
         except Exception as e:
             import traceback
             error_detail = traceback.format_exc()
@@ -159,27 +162,40 @@ class CoPWebUI:
     
     async def get_attack_history(
         self,
-        target_model: Optional[str],
-        limit: int = 20
+        target_model: Optional[str] = None,
+        limit: int = 20,
+        session: Optional[AsyncSession] = None
     ) -> str:
-        """Get recent attack history as formatted HTML"""
+        """
+        Get recent attack history as formatted HTML.
+        Opens its own AsyncSession if not provided.
+
+        Args:
+            target_model: Filter by specific model (None = all models)
+            limit: Maximum number of results
+            session: Optional existing session (if called from same loop context)
+        """
         if not self.async_session_factory:
             return "<p>⚠️ Database not initialized. History features unavailable.</p>"
-            
+
+        own_session = False
+        if session is None:
+            session = self.async_session_factory()
+            own_session = True
+
         try:
-            async with self.async_session_factory() as session:
-                repo = AttackRepository(session)
-                
-                if target_model and target_model != "All Models":
-                    attacks = await repo.get_recent_attacks(
-                        target_model=target_model,
-                        limit=limit
-                    )
-                else:
-                    attacks = await repo.get_recent_attacks(limit=limit)
-                
-                return self._format_history_table(attacks)
-            
+            repo = AttackRepository(session)
+
+            if target_model and target_model != "All Models":
+                attacks = await repo.get_recent_attacks(
+                    target_model=target_model,
+                    limit=limit
+                )
+            else:
+                attacks = await repo.get_recent_attacks(limit=limit)
+
+            return self._format_history_table(attacks)
+
         except Exception as e:
             import traceback
             error_detail = traceback.format_exc()
@@ -190,6 +206,9 @@ class CoPWebUI:
                 <pre style="font-size: 10px;">{error_detail}</pre>
             </details>
             """
+        finally:
+            if own_session:
+                await session.close()
     
     async def get_statistics(self) -> str:
         """Get overall statistics as formatted HTML"""
