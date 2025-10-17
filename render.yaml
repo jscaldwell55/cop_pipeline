@@ -26,12 +26,51 @@ services:
           name: cop-postgres
           property: connectionString
       
+      # Parse DATABASE_URL into individual components for legacy compatibility
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: cop-postgres
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: cop-postgres
+          property: port
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: cop-postgres
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: cop-postgres
+          property: password
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: cop-postgres
+          property: database
+      
       # Redis (auto-filled by Render)
       - key: REDIS_URL
         fromService:
           type: redis
           name: cop-redis
           property: connectionString
+      
+      # Parse REDIS_URL into individual components
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: cop-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: cop-redis
+          property: port
+      - key: REDIS_PASSWORD
+        fromService:
+          type: redis
+          name: cop-redis
+          property: password
       
       # Pipeline Configuration
       - key: MAX_ITERATIONS
@@ -62,15 +101,16 @@ services:
     autoDeploy: true
     
     # Resources (adjust based on needs)
-    plan: starter  # Free tier (512MB RAM, 0.5 CPU)
-    # plan: standard  # $7/mo (2GB RAM, 1 CPU)
-    # plan: pro  # $25/mo (4GB RAM, 2 CPU)
+    plan: free  # Free tier (512MB RAM, 0.5 CPU) - Note: service sleeps after 15min inactivity
+    # plan: starter  # $7/mo (512MB RAM, 0.5 CPU) - Always on, no sleep
+    # plan: standard  # $25/mo (2GB RAM, 1 CPU)
+    # plan: pro  # $85/mo (4GB RAM, 2 CPU)
 
   # Redis Cache
   - type: redis
     name: cop-redis
-    plan: starter  # Free tier: 25MB
-    # plan: standard  # $10/mo: 256MB
+    plan: free  # Free tier: 25MB, expires after 90 days
+    # plan: starter  # $10/mo: 256MB, persistent
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
 
