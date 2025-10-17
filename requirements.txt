@@ -4,7 +4,7 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 
 # LLM & AI Frameworks
-litellm
+litellm>=1.65.0  # xAI support added in v1.65.0+
 langgraph
 langchain
 langchain-core==0.1.25  # Required by langgraph 0.0.26
