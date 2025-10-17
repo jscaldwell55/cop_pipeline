@@ -3,6 +3,7 @@
 Main entry point for CoP Pipeline.
 
 FIXED: Now properly passes principles_used and successful_composition to AttackMetrics
+FIXED: Changed model_name to model for RedTeamingAgent and JudgeLLM
 """
 
 import asyncio
@@ -68,12 +69,12 @@ class CoPPipeline:
         # Initialize components
         self.logger.info("initializing_cop_pipeline")
         
-        # Agents
+        # Agents - FIXED: Changed model_name to model
         self.red_teaming_agent = RedTeamingAgent(
-            model_name=red_teaming_agent_model
+            model=red_teaming_agent_model or self.settings.default_red_teaming_agent
         )
         self.judge_llm = JudgeLLM(
-            model_name=judge_llm_model
+            model=judge_llm_model or self.settings.default_judge_llm
         )
         
         # Principles

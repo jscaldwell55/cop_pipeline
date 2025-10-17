@@ -10,6 +10,7 @@ CHANGES:
 - Multi-stage evaluation: pattern match → LLM judge → final scoring
 - More detailed logging for debugging false positives
 - FIXED: JSON parsing to handle markdown code blocks
+- FIXED: Changed model_name parameter to model for consistency
 """
 
 import json
@@ -80,11 +81,11 @@ class JudgeLLM:
     
     def __init__(
         self,
-        model_name: str = None,
+        model: str = None,  # FIXED: Changed from model_name to model
         temperature: float = 0.0,  # Low temperature for consistent evaluation
         strict_mode: bool = True   # NEW: Enable strict pre-filtering
     ):
-        self.model_name = model_name or settings.default_judge_llm
+        self.model_name = model or settings.default_judge_llm
         self.temperature = temperature
         self.strict_mode = strict_mode
         self.logger = structlog.get_logger()
