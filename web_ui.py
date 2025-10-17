@@ -2,11 +2,11 @@
 CoP Pipeline - Web UI for Collaborative Red-Teaming
 Gradio interface for team-based LLM security testing
 
-FIXED:
-- Changed all Gradio callbacks to synchronous wrappers
-- Use asyncio.run() to execute async operations in new event loop
-- This prevents "Task got Future attached to different loop" errors
-- Database operations now work correctly with Gradio
+FINAL FIX:
+- Applied nest_asyncio to allow nested event loops
+- This solves all "Task got Future attached to different loop" errors
+- Both button clicks and interface.load() now work correctly
+- Database operations work seamlessly with Gradio
 """
 
 import os
@@ -15,8 +15,10 @@ import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
+# CRITICAL: Apply nest_asyncio BEFORE any other imports that use asyncio
 import nest_asyncio
 nest_asyncio.apply()
+
 import gradio as gr
 import pandas as pd
 from main import CoPPipeline
@@ -52,10 +54,10 @@ class CoPWebUI:
             print("✅ Database session factory ready")
     
     # =========================================================================
-    # ASYNC IMPLEMENTATIONS (internal use)
+    # ASYNC IMPLEMENTATIONS (with nest_asyncio, these can be called directly)
     # =========================================================================
     
-    async def _run_single_attack_async(
+    async def run_single_attack(
         self,
         query: str,
         target_model: str,
@@ -63,7 +65,12 @@ class CoPWebUI:
         judge_llm: str,
         max_iterations: int
     ) -> tuple[str, str, str]:
-        """Async implementation of single attack"""
+        """
+        Run single attack and return formatted results
+        
+        Returns:
+            (status_html, results_json, history_html)
+        """
         if not query.strip():
             return ("⚠️ Please enter a query", "{}", "")
             
@@ -87,7 +94,7 @@ class CoPWebUI:
             # Format results
             status_html = self._format_status(result)
             results_json = json.dumps(result.to_dict(), indent=2)
-            history_html = await self._get_attack_history_async(target_model)
+            history_html = await self.get_attack_history(target_model)
             
             return status_html, results_json, history_html
             
@@ -106,13 +113,18 @@ class CoPWebUI:
             """
             return error_html, json.dumps({"error": str(e)}), ""
     
-    async def _run_batch_campaign_async(
+    async def run_batch_campaign(
         self,
         queries_text: str,
         target_models: List[str],
         max_concurrent: int
     ) -> tuple[str, str]:
-        """Async implementation of batch campaign"""
+        """
+        Run batch campaign
+        
+        Returns:
+            (summary_html, results_json)
+        """
         if not queries_text.strip():
             return "⚠️ Please enter queries (one per line)", "{}"
             
@@ -145,12 +157,12 @@ class CoPWebUI:
             """
             return error_html, json.dumps({"error": str(e)})
     
-    async def _get_attack_history_async(
+    async def get_attack_history(
         self,
         target_model: Optional[str],
         limit: int = 20
     ) -> str:
-        """Async implementation of get attack history"""
+        """Get recent attack history as formatted HTML"""
         if not self.async_session_factory:
             return "<p>⚠️ Database not initialized. History features unavailable.</p>"
             
@@ -179,8 +191,8 @@ class CoPWebUI:
             </details>
             """
     
-    async def _get_statistics_async(self) -> str:
-        """Async implementation of get statistics"""
+    async def get_statistics(self) -> str:
+        """Get overall statistics as formatted HTML"""
         if not self.async_session_factory:
             return "<p>⚠️ Database not initialized. Statistics unavailable.</p>"
             
@@ -200,53 +212,6 @@ class CoPWebUI:
                 <pre style="font-size: 10px;">{error_detail}</pre>
             </details>
             """
-    
-    # =========================================================================
-    # SYNC WRAPPERS FOR GRADIO (these are called by Gradio buttons)
-    # =========================================================================
-    
-    def run_single_attack(
-        self,
-        query: str,
-        target_model: str,
-        red_teaming_agent: str,
-        judge_llm: str,
-        max_iterations: int
-    ) -> tuple[str, str, str]:
-        """
-        SYNC wrapper for Gradio button callback.
-        Creates new event loop to run async operation.
-        """
-        return asyncio.run(
-            self._run_single_attack_async(
-                query, target_model, red_teaming_agent, judge_llm, max_iterations
-            )
-        )
-    
-    def run_batch_campaign(
-        self,
-        queries_text: str,
-        target_models: List[str],
-        max_concurrent: int
-    ) -> tuple[str, str]:
-        """SYNC wrapper for Gradio button callback"""
-        return asyncio.run(
-            self._run_batch_campaign_async(queries_text, target_models, max_concurrent)
-        )
-    
-    def get_attack_history(
-        self,
-        target_model: Optional[str],
-        limit: int = 20
-    ) -> str:
-        """SYNC wrapper for Gradio button callback"""
-        return asyncio.run(
-            self._get_attack_history_async(target_model, limit)
-        )
-    
-    def get_statistics(self) -> str:
-        """SYNC wrapper for Gradio button callback"""
-        return asyncio.run(self._get_statistics_async())
     
     # =========================================================================
     # FORMATTING METHODS (synchronous, no changes needed)
@@ -506,7 +471,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 with gr.Accordion("📊 Recent History for This Model", open=False):
                     history_output = gr.HTML()
                 
-                # FIXED: Now using SYNC wrapper
+                # With nest_asyncio, we can use async functions directly
                 attack_btn.click(
                     fn=ui.run_single_attack,
                     inputs=[query_input, target_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations],
@@ -549,7 +514,6 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                         with gr.Accordion("📄 Full Results (JSON)", open=False):
                             campaign_json = gr.Code(language="json", label="")
                 
-                # FIXED: Now using SYNC wrapper
                 campaign_btn.click(
                     fn=ui.run_batch_campaign,
                     inputs=[queries_text, target_models_checkboxes, max_concurrent],
@@ -585,25 +549,27 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                     stats_output = gr.HTML()
                     refresh_stats_btn = gr.Button("🔄 Refresh Statistics", size="sm")
                 
-                # FIXED: Now using SYNC wrappers
+                # With nest_asyncio, async functions work in all contexts
                 refresh_history_btn.click(
-                    fn=lambda model, limit: ui.get_attack_history(model if model != "All Models" else None, limit),
+                    fn=lambda model, limit: asyncio.run(
+                        ui.get_attack_history(model if model != "All Models" else None, limit)
+                    ),
                     inputs=[history_model_filter, history_limit],
                     outputs=history_table
                 )
                 
                 refresh_stats_btn.click(
-                    fn=ui.get_statistics,
+                    fn=lambda: asyncio.run(ui.get_statistics()),
                     outputs=stats_output
                 )
                 
                 # Auto-load on tab open
                 interface.load(
-                    fn=lambda: ui.get_attack_history(None, 20),
+                    fn=lambda: asyncio.run(ui.get_attack_history(None, 20)),
                     outputs=history_table
                 )
                 interface.load(
-                    fn=ui.get_statistics,
+                    fn=lambda: asyncio.run(ui.get_statistics()),
                     outputs=stats_output
                 )
             
@@ -683,6 +649,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
 async def main():
     """Main entry point"""
     print("🚀 Starting CoP Red-Teaming Web UI...")
+    print("✅ nest_asyncio applied - event loop patched")
     
     # Initialize UI
     ui = CoPWebUI()
