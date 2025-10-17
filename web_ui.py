@@ -649,18 +649,6 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 - With Grok-2 + GPT-4o: ~$0.02-0.05
                 - With GPT-4o-mini only: ~$0.002-0.01
                 
-                ## Responsible Use
-                
-                ⚠️ **This is a security research tool**
-                - Only test systems you have permission to test
-                - Responsibly disclose findings to model providers
-                - Use results to improve AI safety, not cause harm
-                
-                ## Support
-                
-                - Documentation: README.md
-                - Issues: GitHub Issues
-                - Questions: Slack #red-team channel
                 """)
         
         gr.Markdown("""
