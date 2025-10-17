@@ -2,13 +2,14 @@
 """
 Configuration Settings
 
-FIXED: Added wandb_mode field to support WANDB_MODE=disabled
+FIXED: Made postgres_password optional and added database_url parsing for Render
 """
 
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import Optional
 from functools import lru_cache
+import os
 
 
 class Settings(BaseSettings):
@@ -19,22 +20,24 @@ class Settings(BaseSettings):
     google_api_key: Optional[str] = None
     together_api_key: Optional[str] = Field(None, env="TOGETHER_API_KEY")
     
-    # Database
-    postgres_host: str = "localhost"
-    postgres_port: int = 5432
-    postgres_db: str = "cop_pipeline"
-    postgres_user: str = "cop_user"
-    postgres_password: str
+    # Database - made optional for Render compatibility
+    postgres_host: Optional[str] = "localhost"
+    postgres_port: Optional[int] = 5432
+    postgres_db: Optional[str] = "cop_pipeline"
+    postgres_user: Optional[str] = "cop_user"
+    postgres_password: Optional[str] = None  # Made optional
+    database_url_override: Optional[str] = Field(None, env="DATABASE_URL")  # For Render
     
-    # Redis
-    redis_host: str = "localhost"
-    redis_port: int = 6379
+    # Redis - made optional for Render compatibility
+    redis_host: Optional[str] = "localhost"
+    redis_port: Optional[int] = 6379
     redis_password: Optional[str] = None
+    redis_url_override: Optional[str] = Field(None, env="REDIS_URL")  # For Render
     
     # Monitoring
     wandb_api_key: Optional[str] = None
     wandb_project: str = "cop-red-teaming"
-    wandb_mode: Optional[str] = None  # NEW: Support WANDB_MODE=disabled
+    wandb_mode: Optional[str] = None  # Support WANDB_MODE=disabled
     prometheus_port: int = 9090
     
     # Pipeline Configuration
@@ -51,10 +54,39 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
-        extra = "ignore"  # NEW: Ignore extra fields in .env
+        extra = "ignore"  # Ignore extra fields in .env
+    
+    @field_validator('postgres_password', mode='before')
+    @classmethod
+    def validate_postgres_password(cls, v, info):
+        """Allow postgres_password to be optional if DATABASE_URL is provided"""
+        if v is None:
+            # Check if DATABASE_URL exists in environment
+            database_url = info.data.get('database_url_override') or os.environ.get('DATABASE_URL')
+            if not database_url:
+                raise ValueError(
+                    "Either postgres_password or DATABASE_URL must be provided. "
+                    "On Render, DATABASE_URL should be automatically set."
+                )
+        return v
     
     @property
     def database_url(self) -> str:
+        """
+        Get database URL, preferring DATABASE_URL if available (Render),
+        otherwise construct from individual components
+        """
+        # Use Render's DATABASE_URL if available
+        if self.database_url_override:
+            # Convert postgres:// to postgresql+asyncpg://
+            url = self.database_url_override
+            if url.startswith('postgres://'):
+                url = url.replace('postgres://', 'postgresql+asyncpg://', 1)
+            elif url.startswith('postgresql://'):
+                url = url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+            return url
+        
+        # Otherwise construct from components
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
@@ -62,6 +94,15 @@ class Settings(BaseSettings):
     
     @property
     def redis_url(self) -> str:
+        """
+        Get Redis URL, preferring REDIS_URL if available (Render),
+        otherwise construct from individual components
+        """
+        # Use Render's REDIS_URL if available
+        if self.redis_url_override:
+            return self.redis_url_override
+        
+        # Otherwise construct from components
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/0"
         return f"redis://{self.redis_host}:{self.redis_port}/0"
