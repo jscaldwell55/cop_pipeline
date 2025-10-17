@@ -66,6 +66,14 @@ services:
     # plan: standard  # $7/mo (2GB RAM, 1 CPU)
     # plan: pro  # $25/mo (4GB RAM, 2 CPU)
 
+  # Redis Cache
+  - type: redis
+    name: cop-redis
+    plan: starter  # Free tier: 25MB
+    # plan: standard  # $10/mo: 256MB
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
 databases:
   # PostgreSQL Database
   - name: cop-postgres
@@ -74,12 +82,3 @@ databases:
     plan: starter  # Free tier: 1GB storage, 97 hrs/mo
     # plan: standard  # $7/mo: 10GB, 400 hrs, auto backups
     ipAllowList: []  # Empty = allow all (or restrict to your IPs)
-
-services:
-  # Redis Cache
-  - type: redis
-    name: cop-redis
-    plan: starter  # Free tier: 25MB
-    # plan: standard  # $10/mo: 256MB
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
