@@ -313,20 +313,12 @@ class CoPWorkflow:
         
         # Determine base prompt (best or initial)
         base_prompt = state["best_prompt"] if state.get("best_score", 0) > 0 else state["initial_prompt"]
-        
+
         # FIXED: Use correct method name - refine_prompt
-        # Build principle descriptions dict
-        principle_descriptions = {
-            p: self.principle_library.get_principle(p).description
-            for p in state["current_principles"]
-            if self.principle_library.get_principle(p) is not None
-        }
-        
         refined_prompt = await self.red_teaming_agent.refine_prompt(
             harmful_query=state["original_query"],
             current_prompt=base_prompt,
-            selected_principles=state["current_principles"],
-            principle_descriptions=principle_descriptions
+            selected_principles=state["current_principles"]
         )
         
         if not refined_prompt:
