@@ -429,7 +429,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
         gr.Markdown("""
         # 🎯 CoP Red-Teaming Pipeline
         
-        **Enterprise-grade automated red-teaming for Large Language Models**
+        **Automated red-teaming for Large Language Models**
         
         Test LLM vulnerabilities using Composition of Principles (CoP) framework.
         All attacks are logged to shared database for team visibility.
