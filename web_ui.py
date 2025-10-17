@@ -12,8 +12,8 @@ import gradio as gr
 import pandas as pd
 from main import CoPPipeline
 from database.repository import AttackRepository
-from config.settings import settings
-
+from config.settings import get_settings  # ✅ Import the function
+settings = get_settings()  # ✅ Call it to get the instance
 
 class CoPWebUI:
     """Web interface for CoP red-teaming pipeline"""
