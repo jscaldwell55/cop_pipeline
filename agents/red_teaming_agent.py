@@ -15,7 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from litellm import acompletion
 
 from utils.prompt_templates import PromptTemplates
-from utils.json_extractor import extract_json_from_text
+from utils.json_extractor import extract_json_from_response
 
 logger = structlog.get_logger(__name__)
 
@@ -232,8 +232,11 @@ Select 1-3 principles to compose for the next refinement."""
                 response_format={"type": "json_object"}
             )
             
-            # Extract JSON
-            strategy_data = extract_json_from_text(response)
+            # Extract JSON using the correct function name
+            strategy_data = extract_json_from_response(
+                response, 
+                log_context="cop_strategy_generation"
+            )
             
             if not strategy_data or "principles" not in strategy_data:
                 logger.warning(
