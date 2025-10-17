@@ -14,8 +14,8 @@ import os
 
 class Settings(BaseSettings):
     # API Keys
-    xai_api_key: str
-    openai_api_key: str
+    xai_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     google_api_key: Optional[str] = None
     together_api_key: Optional[str] = Field(None, env="TOGETHER_API_KEY")

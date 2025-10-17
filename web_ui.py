@@ -1,6 +1,12 @@
 """
 CoP Pipeline - Web UI for Collaborative Red-Teaming
 Gradio interface for team-based LLM security testing
+
+FIXED:
+- Removed all asyncio.run() calls (use direct async functions)
+- Fixed model attribute assignment for both agents
+- Fixed repository initialization (create sessions on-demand)
+- Fixed attribute names to match AttackMetrics dataclass
 """
 
 import asyncio
@@ -23,7 +29,7 @@ class CoPWebUI:
     
     def __init__(self):
         self.pipeline: Optional[CoPPipeline] = None
-        self.repo: Optional[AttackRepository] = None
+        self.async_session_factory = None
         
     async def initialize(self):
         """Initialize pipeline and database connection"""
@@ -34,13 +40,11 @@ class CoPWebUI:
         )
         await self.pipeline.initialize_database()
         
-        # Store the session factory, not a session instance
-        # We'll create new sessions for each query to avoid loop issues
+        # Store the session factory for creating sessions on-demand
         self.async_session_factory = self.pipeline.async_session_factory
         
         if not self.async_session_factory:
             print("⚠️  Warning: Database not initialized, history features will be limited")
-            self.repo = None
         else:
             print("✅ Database session factory ready")
         
@@ -65,9 +69,16 @@ class CoPWebUI:
         progress(0, desc="Initializing attack...")
         
         try:
-            # Update pipeline models if changed
+            # FIXED: Update pipeline models correctly
+            # For RedTeamingAgent
             self.pipeline.red_teaming_agent.model = red_teaming_agent
-            self.pipeline.judge_llm.model = judge_llm
+            self.pipeline.red_teaming_agent.litellm_model = \
+                self.pipeline.red_teaming_agent.model_mapping.get(red_teaming_agent, red_teaming_agent)
+            
+            # For JudgeLLM  
+            self.pipeline.judge_llm.model_name = judge_llm
+            self.pipeline.judge_llm.litellm_model = \
+                self.pipeline.judge_llm.model_mapping.get(judge_llm, judge_llm)
             
             # Run attack with progress updates
             result = await self.pipeline.attack_single(
@@ -86,10 +97,16 @@ class CoPWebUI:
             return status_html, results_json, history_html
             
         except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
             error_html = f"""
             <div style="background: #fee; border: 1px solid #c00; padding: 15px; border-radius: 5px;">
                 <h3 style="color: #c00;">❌ Attack Failed</h3>
                 <p><strong>Error:</strong> {str(e)}</p>
+                <details>
+                    <summary>Stack Trace</summary>
+                    <pre style="font-size: 10px;">{error_detail}</pre>
+                </details>
             </div>
             """
             return error_html, json.dumps({"error": str(e)}), ""
@@ -129,10 +146,16 @@ class CoPWebUI:
             return summary_html, results_json
             
         except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
             error_html = f"""
             <div style="background: #fee; border: 1px solid #c00; padding: 15px; border-radius: 5px;">
                 <h3 style="color: #c00;">❌ Campaign Failed</h3>
                 <p><strong>Error:</strong> {str(e)}</p>
+                <details>
+                    <summary>Stack Trace</summary>
+                    <pre style="font-size: 10px;">{error_detail}</pre>
+                </details>
             </div>
             """
             return error_html, json.dumps({"error": str(e)})
@@ -143,37 +166,61 @@ class CoPWebUI:
         limit: int = 20
     ) -> str:
         """Get recent attack history as formatted HTML"""
-        if not self.repo:
-            return "<p>⚠️ Database repository not initialized. History features unavailable.</p>"
+        # FIXED: Create session on-demand instead of using self.repo
+        if not self.async_session_factory:
+            return "<p>⚠️ Database not initialized. History features unavailable.</p>"
             
         try:
-            if target_model and target_model != "All Models":
-                attacks = await self.repo.get_recent_attacks(
-                    target_model=target_model,
-                    limit=limit
-                )
-            else:
-                attacks = await self.repo.get_recent_attacks(limit=limit)
-            
-            return self._format_history_table(attacks)
+            async with self.async_session_factory() as session:
+                repo = AttackRepository(session)
+                
+                if target_model and target_model != "All Models":
+                    attacks = await repo.get_recent_attacks(
+                        target_model=target_model,
+                        limit=limit
+                    )
+                else:
+                    attacks = await repo.get_recent_attacks(limit=limit)
+                
+                return self._format_history_table(attacks)
             
         except Exception as e:
-            return f"<p style='color: red;'>Error loading history: {str(e)}</p>"
+            import traceback
+            error_detail = traceback.format_exc()
+            return f"""
+            <p style='color: red;'>Error loading history: {str(e)}</p>
+            <details>
+                <summary>Stack Trace</summary>
+                <pre style="font-size: 10px;">{error_detail}</pre>
+            </details>
+            """
     
     async def get_statistics(self) -> str:
         """Get overall statistics as formatted HTML"""
-        if not self.repo:
-            return "<p>⚠️ Database repository not initialized. Statistics unavailable.</p>"
+        # FIXED: Create session on-demand
+        if not self.async_session_factory:
+            return "<p>⚠️ Database not initialized. Statistics unavailable.</p>"
             
         try:
-            stats = await self.repo.get_global_statistics()
-            return self._format_statistics(stats)
+            async with self.async_session_factory() as session:
+                repo = AttackRepository(session)
+                stats = await repo.get_global_statistics()
+                return self._format_statistics(stats)
             
         except Exception as e:
-            return f"<p style='color: red;'>Error loading statistics: {str(e)}</p>"
+            import traceback
+            error_detail = traceback.format_exc()
+            return f"""
+            <p style='color: red;'>Error loading statistics: {str(e)}</p>
+            <details>
+                <summary>Stack Trace</summary>
+                <pre style="font-size: 10px;">{error_detail}</pre>
+            </details>
+            """
     
     def _format_status(self, result) -> str:
         """Format attack result as HTML status card"""
+        # FIXED: Use correct attribute names from AttackMetrics
         success_color = "#4caf50" if result.success else "#f44336"
         success_icon = "✅" if result.success else "❌"
         
@@ -191,7 +238,7 @@ class CoPWebUI:
                 </div>
                 <div>
                     <p><strong>Total Queries:</strong> {result.total_queries}</p>
-                    <p><strong>Duration:</strong> {result.duration:.1f}s</p>
+                    <p><strong>Duration:</strong> {result.duration_seconds:.1f}s</p>
                     <p><strong>Model:</strong> {result.target_model}</p>
                 </div>
             </div>
@@ -203,7 +250,7 @@ class CoPWebUI:
             
             <details style="margin-top: 10px;">
                 <summary style="cursor: pointer; font-weight: bold;">💬 Target Response</summary>
-                <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 10px;">{result.final_target_response[:1000]}{'...' if len(result.final_target_response) > 1000 else ''}</pre>
+                <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 10px;">{result.final_response[:1000]}{'...' if len(result.final_response) > 1000 else ''}</pre>
             </details>
             
             <details style="margin-top: 10px;">
@@ -215,8 +262,17 @@ class CoPWebUI:
     
     async def _format_history(self, target_model: str, limit: int = 10) -> str:
         """Format recent attack history for a model"""
-        attacks = await self.repo.get_recent_attacks(target_model=target_model, limit=limit)
-        return self._format_history_table(attacks)
+        # FIXED: Create session on-demand
+        if not self.async_session_factory:
+            return "<p>No history available</p>"
+        
+        try:
+            async with self.async_session_factory() as session:
+                repo = AttackRepository(session)
+                attacks = await repo.get_recent_attacks(target_model=target_model, limit=limit)
+                return self._format_history_table(attacks)
+        except Exception as e:
+            return f"<p>Error: {str(e)}</p>"
     
     def _format_history_table(self, attacks: List[Any]) -> str:
         """Format attacks as HTML table"""
@@ -260,6 +316,7 @@ class CoPWebUI:
     
     def _format_campaign_summary(self, campaign) -> str:
         """Format campaign results as HTML summary"""
+        # FIXED: Use correct attribute name - duration_seconds not total_duration
         return f"""
         <div style="background: white; border: 2px solid #2196f3; padding: 20px; border-radius: 10px;">
             <h2 style="color: #2196f3; margin-top: 0;">📊 Campaign Results</h2>
@@ -281,7 +338,7 @@ class CoPWebUI:
             
             <div style="margin-top: 20px;">
                 <p><strong>Average Queries per Success:</strong> {campaign.avg_queries_per_success:.1f}</p>
-                <p><strong>Total Duration:</strong> {campaign.total_duration:.1f}s</p>
+                <p><strong>Total Duration:</strong> {campaign.duration_seconds:.1f}s</p>
             </div>
             
             <details style="margin-top: 20px;">
@@ -431,8 +488,9 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 with gr.Accordion("📊 Recent History for This Model", open=False):
                     history_output = gr.HTML()
                 
+                # FIXED: Use direct async function, not asyncio.run()
                 attack_btn.click(
-                    fn=lambda *args: asyncio.run(ui.run_single_attack(*args)),
+                    fn=ui.run_single_attack,
                     inputs=[query_input, target_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations],
                     outputs=[status_output, results_json, history_output]
                 )
@@ -473,8 +531,9 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                         with gr.Accordion("📄 Full Results (JSON)", open=False):
                             campaign_json = gr.Code(language="json", label="")
                 
+                # FIXED: Use direct async function
                 campaign_btn.click(
-                    fn=lambda *args: asyncio.run(ui.run_batch_campaign(*args)),
+                    fn=ui.run_batch_campaign,
                     inputs=[queries_text, target_models_checkboxes, max_concurrent],
                     outputs=[campaign_summary, campaign_json]
                 )
@@ -508,24 +567,34 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                     stats_output = gr.HTML()
                     refresh_stats_btn = gr.Button("🔄 Refresh Statistics", size="sm")
                 
+                # FIXED: Use direct async functions with lambda wrappers
+                async def refresh_history_wrapper(model, limit):
+                    return await ui.get_attack_history(model if model != "All Models" else None, limit)
+                
+                async def refresh_stats_wrapper():
+                    return await ui.get_statistics()
+                
+                async def load_history_wrapper():
+                    return await ui.get_attack_history(None, 20)
+                
                 refresh_history_btn.click(
-                    fn=lambda m, l: asyncio.run(ui.get_attack_history(m if m != "All Models" else None, l)),
+                    fn=refresh_history_wrapper,
                     inputs=[history_model_filter, history_limit],
                     outputs=history_table
                 )
                 
                 refresh_stats_btn.click(
-                    fn=lambda: asyncio.run(ui.get_statistics()),
+                    fn=refresh_stats_wrapper,
                     outputs=stats_output
                 )
                 
-                # Auto-load on tab open
+                # FIXED: Auto-load on tab open with async wrappers
                 interface.load(
-                    fn=lambda: asyncio.run(ui.get_attack_history(None, 20)),
+                    fn=load_history_wrapper,
                     outputs=history_table
                 )
                 interface.load(
-                    fn=lambda: asyncio.run(ui.get_statistics()),
+                    fn=refresh_stats_wrapper,
                     outputs=stats_output
                 )
             

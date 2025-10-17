@@ -4,7 +4,7 @@ CoP Workflow
 Main orchestration using LangGraph for state management.
 Implements Algorithm 1 from the paper.
 
-FIXED: Proper failure handling AND principles tracking across iterations
+FIXED: Method names corrected to match RedTeamingAgent actual methods
 """
 
 from typing import TypedDict, Annotated, Sequence
@@ -266,37 +266,37 @@ class CoPWorkflow:
         # Get principles as list for prompt
         principles = self.principle_library.get_principle_names()
         
-        # Generate strategy
-        cop_response = await self.red_teaming_agent.generate_composition_strategy(
-            goal=state["original_query"],
-            principles=principles
+        # FIXED: Use correct method name - generate_cop_strategy
+        # Determine base prompt for strategy generation
+        base_prompt = state.get("best_prompt", state.get("initial_prompt", state["original_query"]))
+        
+        selected_principles = await self.red_teaming_agent.generate_cop_strategy(
+            harmful_query=state["original_query"],
+            current_prompt=base_prompt,
+            available_principles=principles
         )
         
-        # Parse the composition (handles JSON parsing errors gracefully)
-        strategy = self.principle_composer.parse_composition_response(cop_response)
-        
-        if strategy is None:
+        if not selected_principles:
             self.logger.warning(
-                "failed_to_parse_strategy",
+                "failed_to_generate_strategy",
                 using_fallback=True,
                 query_id=state["query_id"]
             )
-            # Fallback is now handled inside parse_composition_response
+            # Fallback to most effective principle
+            selected_principles = ["expand"]
         
-        strategy_name = strategy.name
-        principles_to_use = strategy.principles
-        composition_str = self.principle_composer.get_composition_string(strategy)
+        # Create composition string
+        composition_str = " ⊕ ".join(selected_principles)
         
         self.logger.info(
             "cop_strategy_generated",
             query_id=state["query_id"],
-            strategy=strategy_name,
-            principles=principles_to_use,
+            principles=selected_principles,
             composition=composition_str
         )
         
         return {
-            "current_principles": principles_to_use,
+            "current_principles": selected_principles,
             "current_composition": composition_str,
             "red_teaming_queries": state.get("red_teaming_queries", 0) + 1,
             "total_queries": state.get("total_queries", 0) + 1,
@@ -314,11 +314,19 @@ class CoPWorkflow:
         # Determine base prompt (best or initial)
         base_prompt = state["best_prompt"] if state.get("best_score", 0) > 0 else state["initial_prompt"]
         
-        # Refine using red-teaming agent
-        refined_prompt = await self.red_teaming_agent.refine_jailbreak_prompt(
-            goal=state["original_query"],
+        # FIXED: Use correct method name - refine_prompt
+        # Build principle descriptions dict
+        principle_descriptions = {
+            p: self.principle_library.get_principle(p).description
+            for p in state["current_principles"]
+            if self.principle_library.get_principle(p) is not None
+        }
+        
+        refined_prompt = await self.red_teaming_agent.refine_prompt(
+            harmful_query=state["original_query"],
             current_prompt=base_prompt,
-            principles=state["current_principles"]
+            selected_principles=state["current_principles"],
+            principle_descriptions=principle_descriptions
         )
         
         if not refined_prompt:

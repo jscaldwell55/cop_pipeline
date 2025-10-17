@@ -8,11 +8,10 @@ litellm
 langgraph
 langchain
 langchain-core==0.1.25  # Required by langgraph 0.0.26
-langsmith>=0.1.0,<0.2.0  # Explicitly specify to resolve conflict
+langsmith>=0.1.0
 
 # Async & Networking
 aiohttp==3.9.1
-asyncio==3.4.3
 tenacity==8.2.3
 httpx==0.25.2
 
@@ -50,4 +49,4 @@ isort==5.13.2
 # Additional Dependencies
 greenlet
 click==8.1.7
-rich==13.
+rich==13.7.0
