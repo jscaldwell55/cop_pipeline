@@ -1,0 +1,85 @@
+# render.yaml - Render Blueprint for CoP Pipeline
+# One file to deploy everything!
+
+services:
+  # Main Web UI Service
+  - type: web
+    name: cop-redteam-ui
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    envVars:
+      # API Keys (add these in Render dashboard)
+      - key: XAI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: TOGETHER_API_KEY
+        sync: false
+      
+      # Database (auto-filled by Render)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cop-postgres
+          property: connectionString
+      
+      # Redis (auto-filled by Render)
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: cop-redis
+          property: connectionString
+      
+      # Pipeline Configuration
+      - key: MAX_ITERATIONS
+        value: "10"
+      - key: JAILBREAK_THRESHOLD
+        value: "8.0"
+      - key: SIMILARITY_THRESHOLD
+        value: "1.0"
+      - key: DEFAULT_RED_TEAMING_AGENT
+        value: "grok-2"
+      - key: DEFAULT_JUDGE_LLM
+        value: "gpt-4o"
+      - key: MAX_CONCURRENT_REQUESTS
+        value: "5"
+      - key: LOG_LEVEL
+        value: "INFO"
+      
+      # Render-specific
+      - key: PORT
+        value: "7860"
+      - key: PYTHON_VERSION
+        value: "3.11.8"
+    
+    # Health check
+    healthCheckPath: /
+    
+    # Auto-deploy on git push
+    autoDeploy: true
+    
+    # Resources (adjust based on needs)
+    plan: starter  # Free tier (512MB RAM, 0.5 CPU)
+    # plan: standard  # $7/mo (2GB RAM, 1 CPU)
+    # plan: pro  # $25/mo (4GB RAM, 2 CPU)
+
+databases:
+  # PostgreSQL Database
+  - name: cop-postgres
+    databaseName: cop_pipeline
+    user: cop_user
+    plan: starter  # Free tier: 1GB storage, 97 hrs/mo
+    # plan: standard  # $7/mo: 10GB, 400 hrs, auto backups
+    ipAllowList: []  # Empty = allow all (or restrict to your IPs)
+
+services:
+  # Redis Cache
+  - type: redis
+    name: cop-redis
+    plan: starter  # Free tier: 25MB
+    # plan: standard  # $10/mo: 256MB
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
