@@ -415,7 +415,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
     ]
     
     red_teaming_agents = ["grok-2", "gpt-4o", "gpt-4o-mini"]
-    judge_models = ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet"]
+    judge_models = ["gpt-4o", "gpt-4o-mini"]
     
     with gr.Blocks(
         title="CoP Red-Teaming Pipeline",
