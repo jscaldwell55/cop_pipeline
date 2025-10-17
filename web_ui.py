@@ -3,12 +3,10 @@ CoP Pipeline - Web UI for Collaborative Red-Teaming
 Gradio interface for team-based LLM security testing
 
 FIXED:
-- Removed all asyncio.run() calls (use direct async functions)
-- Fixed model attribute assignment for both agents
-- Fixed repository initialization (create sessions on-demand)
-- Fixed attribute names to match AttackMetrics dataclass
-- Added os import for PORT environment variable (Render compatibility)
-- Use Render's PORT env var instead of hardcoded 7860
+- Changed all Gradio callbacks to synchronous wrappers
+- Use asyncio.run() to execute async operations in new event loop
+- This prevents "Task got Future attached to different loop" errors
+- Database operations now work correctly with Gradio
 """
 
 import os
@@ -17,6 +15,8 @@ import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
+import nest_asyncio
+nest_asyncio.apply()
 import gradio as gr
 import pandas as pd
 from main import CoPPipeline
@@ -50,52 +50,44 @@ class CoPWebUI:
             print("⚠️  Warning: Database not initialized, history features will be limited")
         else:
             print("✅ Database session factory ready")
-        
-    async def run_single_attack(
+    
+    # =========================================================================
+    # ASYNC IMPLEMENTATIONS (internal use)
+    # =========================================================================
+    
+    async def _run_single_attack_async(
         self,
         query: str,
         target_model: str,
         red_teaming_agent: str,
         judge_llm: str,
-        max_iterations: int,
-        progress=gr.Progress()
+        max_iterations: int
     ) -> tuple[str, str, str]:
-        """
-        Run single attack and return formatted results
-        
-        Returns:
-            (status_html, results_json, history_html)
-        """
+        """Async implementation of single attack"""
         if not query.strip():
             return ("⚠️ Please enter a query", "{}", "")
             
-        progress(0, desc="Initializing attack...")
-        
         try:
-            # FIXED: Update pipeline models correctly
-            # For RedTeamingAgent
+            # Update pipeline models
             self.pipeline.red_teaming_agent.model = red_teaming_agent
             self.pipeline.red_teaming_agent.litellm_model = \
                 self.pipeline.red_teaming_agent.model_mapping.get(red_teaming_agent, red_teaming_agent)
             
-            # For JudgeLLM  
             self.pipeline.judge_llm.model_name = judge_llm
             self.pipeline.judge_llm.litellm_model = \
                 self.pipeline.judge_llm.model_mapping.get(judge_llm, judge_llm)
             
-            # Run attack with progress updates
+            # Run attack
             result = await self.pipeline.attack_single(
                 query=query,
                 target_model=target_model,
                 max_iterations=max_iterations
             )
             
-            progress(1.0, desc="Attack complete!")
-            
             # Format results
             status_html = self._format_status(result)
             results_json = json.dumps(result.to_dict(), indent=2)
-            history_html = await self._format_history(target_model)
+            history_html = await self._get_attack_history_async(target_model)
             
             return status_html, results_json, history_html
             
@@ -114,25 +106,17 @@ class CoPWebUI:
             """
             return error_html, json.dumps({"error": str(e)}), ""
     
-    async def run_batch_campaign(
+    async def _run_batch_campaign_async(
         self,
         queries_text: str,
         target_models: List[str],
-        max_concurrent: int,
-        progress=gr.Progress()
+        max_concurrent: int
     ) -> tuple[str, str]:
-        """
-        Run batch campaign
-        
-        Returns:
-            (summary_html, results_json)
-        """
+        """Async implementation of batch campaign"""
         if not queries_text.strip():
             return "⚠️ Please enter queries (one per line)", "{}"
             
         queries = [q.strip() for q in queries_text.split('\n') if q.strip()]
-        
-        progress(0, desc=f"Starting campaign: {len(queries)} queries × {len(target_models)} models...")
         
         try:
             campaign = await self.pipeline.attack_batch(
@@ -140,8 +124,6 @@ class CoPWebUI:
                 target_models=target_models,
                 max_concurrent=max_concurrent
             )
-            
-            progress(1.0, desc="Campaign complete!")
             
             summary_html = self._format_campaign_summary(campaign)
             results_json = json.dumps(campaign.to_dict(), indent=2)
@@ -163,13 +145,12 @@ class CoPWebUI:
             """
             return error_html, json.dumps({"error": str(e)})
     
-    async def get_attack_history(
+    async def _get_attack_history_async(
         self,
         target_model: Optional[str],
         limit: int = 20
     ) -> str:
-        """Get recent attack history as formatted HTML"""
-        # FIXED: Create session on-demand instead of using self.repo
+        """Async implementation of get attack history"""
         if not self.async_session_factory:
             return "<p>⚠️ Database not initialized. History features unavailable.</p>"
             
@@ -198,9 +179,8 @@ class CoPWebUI:
             </details>
             """
     
-    async def get_statistics(self) -> str:
-        """Get overall statistics as formatted HTML"""
-        # FIXED: Create session on-demand
+    async def _get_statistics_async(self) -> str:
+        """Async implementation of get statistics"""
         if not self.async_session_factory:
             return "<p>⚠️ Database not initialized. Statistics unavailable.</p>"
             
@@ -221,9 +201,59 @@ class CoPWebUI:
             </details>
             """
     
+    # =========================================================================
+    # SYNC WRAPPERS FOR GRADIO (these are called by Gradio buttons)
+    # =========================================================================
+    
+    def run_single_attack(
+        self,
+        query: str,
+        target_model: str,
+        red_teaming_agent: str,
+        judge_llm: str,
+        max_iterations: int
+    ) -> tuple[str, str, str]:
+        """
+        SYNC wrapper for Gradio button callback.
+        Creates new event loop to run async operation.
+        """
+        return asyncio.run(
+            self._run_single_attack_async(
+                query, target_model, red_teaming_agent, judge_llm, max_iterations
+            )
+        )
+    
+    def run_batch_campaign(
+        self,
+        queries_text: str,
+        target_models: List[str],
+        max_concurrent: int
+    ) -> tuple[str, str]:
+        """SYNC wrapper for Gradio button callback"""
+        return asyncio.run(
+            self._run_batch_campaign_async(queries_text, target_models, max_concurrent)
+        )
+    
+    def get_attack_history(
+        self,
+        target_model: Optional[str],
+        limit: int = 20
+    ) -> str:
+        """SYNC wrapper for Gradio button callback"""
+        return asyncio.run(
+            self._get_attack_history_async(target_model, limit)
+        )
+    
+    def get_statistics(self) -> str:
+        """SYNC wrapper for Gradio button callback"""
+        return asyncio.run(self._get_statistics_async())
+    
+    # =========================================================================
+    # FORMATTING METHODS (synchronous, no changes needed)
+    # =========================================================================
+    
     def _format_status(self, result) -> str:
         """Format attack result as HTML status card"""
-        # FIXED: Use correct attribute names from AttackMetrics
         success_color = "#4caf50" if result.success else "#f44336"
         success_icon = "✅" if result.success else "❌"
         
@@ -262,20 +292,6 @@ class CoPWebUI:
             </details>
         </div>
         """
-    
-    async def _format_history(self, target_model: str, limit: int = 10) -> str:
-        """Format recent attack history for a model"""
-        # FIXED: Create session on-demand
-        if not self.async_session_factory:
-            return "<p>No history available</p>"
-        
-        try:
-            async with self.async_session_factory() as session:
-                repo = AttackRepository(session)
-                attacks = await repo.get_recent_attacks(target_model=target_model, limit=limit)
-                return self._format_history_table(attacks)
-        except Exception as e:
-            return f"<p>Error: {str(e)}</p>"
     
     def _format_history_table(self, attacks: List[Any]) -> str:
         """Format attacks as HTML table"""
@@ -319,7 +335,6 @@ class CoPWebUI:
     
     def _format_campaign_summary(self, campaign) -> str:
         """Format campaign results as HTML summary"""
-        # FIXED: Use correct attribute name - duration_seconds not total_duration
         return f"""
         <div style="background: white; border: 2px solid #2196f3; padding: 20px; border-radius: 10px;">
             <h2 style="color: #2196f3; margin-top: 0;">📊 Campaign Results</h2>
@@ -406,7 +421,7 @@ class CoPWebUI:
 def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
     """Create Gradio interface"""
     
-    # Available models (from paper + common ones)
+    # Available models
     target_models = [
         "gpt-4o", "gpt-4o-mini", "gpt-4", "o1", "o1-mini",
         "claude-3.5-sonnet", "claude-3-opus", "claude-3-sonnet",
@@ -491,7 +506,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 with gr.Accordion("📊 Recent History for This Model", open=False):
                     history_output = gr.HTML()
                 
-                # FIXED: Use direct async function, not asyncio.run()
+                # FIXED: Now using SYNC wrapper
                 attack_btn.click(
                     fn=ui.run_single_attack,
                     inputs=[query_input, target_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations],
@@ -534,7 +549,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                         with gr.Accordion("📄 Full Results (JSON)", open=False):
                             campaign_json = gr.Code(language="json", label="")
                 
-                # FIXED: Use direct async function
+                # FIXED: Now using SYNC wrapper
                 campaign_btn.click(
                     fn=ui.run_batch_campaign,
                     inputs=[queries_text, target_models_checkboxes, max_concurrent],
@@ -570,34 +585,25 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                     stats_output = gr.HTML()
                     refresh_stats_btn = gr.Button("🔄 Refresh Statistics", size="sm")
                 
-                # FIXED: Use direct async functions with lambda wrappers
-                async def refresh_history_wrapper(model, limit):
-                    return await ui.get_attack_history(model if model != "All Models" else None, limit)
-                
-                async def refresh_stats_wrapper():
-                    return await ui.get_statistics()
-                
-                async def load_history_wrapper():
-                    return await ui.get_attack_history(None, 20)
-                
+                # FIXED: Now using SYNC wrappers
                 refresh_history_btn.click(
-                    fn=refresh_history_wrapper,
+                    fn=lambda model, limit: ui.get_attack_history(model if model != "All Models" else None, limit),
                     inputs=[history_model_filter, history_limit],
                     outputs=history_table
                 )
                 
                 refresh_stats_btn.click(
-                    fn=refresh_stats_wrapper,
+                    fn=ui.get_statistics,
                     outputs=stats_output
                 )
                 
-                # FIXED: Auto-load on tab open with async wrappers
+                # Auto-load on tab open
                 interface.load(
-                    fn=load_history_wrapper,
+                    fn=lambda: ui.get_attack_history(None, 20),
                     outputs=history_table
                 )
                 interface.load(
-                    fn=refresh_stats_wrapper,
+                    fn=ui.get_statistics,
                     outputs=stats_output
                 )
             
@@ -675,7 +681,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
 
 
 async def main():
-    """Main entry point for both local and Render deployment"""
+    """Main entry point"""
     print("🚀 Starting CoP Red-Teaming Web UI...")
     
     # Initialize UI
@@ -687,7 +693,7 @@ async def main():
     interface = create_gradio_interface(ui)
     print("✅ Gradio interface created")
     
-    # FIXED: Get port from environment (Render sets this dynamically)
+    # Get port from environment
     port = int(os.environ.get("PORT", 7860))
     
     # Launch
@@ -700,10 +706,10 @@ async def main():
     print("="*60 + "\n")
     
     interface.launch(
-        server_name="0.0.0.0",  # Bind to all interfaces (REQUIRED for Render)
-        server_port=port,        # Use Render's PORT env var
-        share=False,             # Don't create Gradio share link
-        show_error=True          # Show detailed errors for debugging
+        server_name="0.0.0.0",
+        server_port=port,
+        share=False,
+        show_error=True
     )
 
 

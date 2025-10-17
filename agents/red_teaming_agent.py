@@ -5,6 +5,12 @@ This agent uses an LLM (GPT-4o-mini or Grok-2) to:
 1. Generate initial jailbreak prompts
 2. Select principle compositions (CoP strategies)
 3. Refine prompts based on feedback
+
+FIXED:
+- Pass goal parameter to initial_seed_generation()
+- Pass goal and action_list to composition_of_principles()
+- Pass goal, current_prompt, actions_list to refinement()
+- Use correct JSON extraction function
 """
 
 import os
@@ -47,13 +53,12 @@ class RedTeamingAgent:
         self.max_tokens = max_tokens
         
         # Map friendly model names to LiteLLM format
-        # For XAI models, use xai/ prefix (NOT openai/)
         self.model_mapping = {
             "gpt-4o-mini": "gpt-4o-mini",
             "gpt-4o": "gpt-4o",
             "gpt-4": "gpt-4",
             "gpt-3.5-turbo": "gpt-3.5-turbo",
-            "grok-2": "xai/grok-2-latest",  # CORRECT: Use xai/ prefix
+            "grok-2": "xai/grok-2-latest",
             "grok-2-latest": "xai/grok-2-latest",
         }
         
@@ -109,7 +114,7 @@ class RedTeamingAgent:
         try:
             # Build completion kwargs
             completion_kwargs = {
-                "model": self.litellm_model,  # Use xai/grok-2-latest format
+                "model": self.litellm_model,
                 "messages": messages,
                 "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
@@ -118,9 +123,6 @@ class RedTeamingAgent:
             # Add response format if specified (for structured JSON output)
             if response_format:
                 completion_kwargs["response_format"] = response_format
-            
-            # LiteLLM will automatically use XAI_API_KEY from environment
-            # for models with xai/ prefix - no need to manually pass it
             
             # Call LiteLLM
             response = await acompletion(**completion_kwargs)
@@ -141,7 +143,8 @@ class RedTeamingAgent:
                 "generation_failed",
                 model=self.model,
                 litellm_model=self.litellm_model,
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__
             )
             raise
     
@@ -162,16 +165,42 @@ class RedTeamingAgent:
             query_preview=harmful_query[:50] + "..."
         )
         
-        system_prompt = PromptTemplates.initial_seed_generation()
-        user_prompt = f"Harmful Query: {harmful_query}"
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-        
         try:
-            initial_prompt = await self._generate(messages)
+            # FIXED: Pass goal parameter to initial_seed_generation()
+            # The template expects the goal and returns the full prompt
+            full_prompt = PromptTemplates.initial_seed_generation(goal=harmful_query)
+            
+            # The template returns a system prompt, we need to call the LLM with it
+            messages = [
+                {"role": "user", "content": full_prompt}
+            ]
+            
+            response = await self._generate(messages)
+            
+            # Extract the jailbreak prompt from JSON response
+            try:
+                result = extract_json_from_response(
+                    response,
+                    log_context="initial_seed_generation"
+                )
+                
+                if result and "new_prompt" in result:
+                    initial_prompt = result["new_prompt"]
+                else:
+                    # Fallback: use raw response if JSON extraction fails
+                    logger.warning(
+                        "initial_prompt_json_extraction_failed",
+                        response_preview=response[:200]
+                    )
+                    initial_prompt = response
+                    
+            except Exception as e:
+                logger.warning(
+                    "initial_prompt_json_parse_error",
+                    error=str(e),
+                    response_preview=response[:200]
+                )
+                initial_prompt = response
             
             logger.info(
                 "initial_prompt_generated",
@@ -192,7 +221,7 @@ class RedTeamingAgent:
         self,
         harmful_query: str,
         current_prompt: str,
-        available_principles: List[str]
+        available_principles: List[Dict[str, str]]
     ) -> List[str]:
         """
         Generate CoP strategy by selecting principles to compose.
@@ -203,7 +232,7 @@ class RedTeamingAgent:
         Args:
             harmful_query: Original harmful query
             current_prompt: Current jailbreak prompt
-            available_principles: List of available principle names
+            available_principles: List of principle dicts with 'name' and 'description'
             
         Returns:
             List of selected principle names (e.g., ["expand", "rephrase"])
@@ -213,32 +242,30 @@ class RedTeamingAgent:
             num_principles_available=len(available_principles)
         )
         
-        system_prompt = PromptTemplates.cop_strategy_generation(available_principles)
-        user_prompt = f"""Harmful Query: {harmful_query}
-
-Current Prompt: {current_prompt}
-
-Select 1-3 principles to compose for the next refinement."""
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-        
         try:
+            # FIXED: Pass goal and action_list to composition_of_principles()
+            full_prompt = PromptTemplates.composition_of_principles(
+                goal=harmful_query,
+                action_list=available_principles
+            )
+            
+            messages = [
+                {"role": "user", "content": full_prompt}
+            ]
+            
             # Request structured JSON output
             response = await self._generate(
                 messages,
                 response_format={"type": "json_object"}
             )
             
-            # Extract JSON using the correct function name
+            # Extract JSON
             strategy_data = extract_json_from_response(
                 response, 
                 log_context="cop_strategy_generation"
             )
             
-            if not strategy_data or "principles" not in strategy_data:
+            if not strategy_data:
                 logger.warning(
                     "invalid_strategy_response",
                     response=response[:200]
@@ -246,19 +273,37 @@ Select 1-3 principles to compose for the next refinement."""
                 # Fallback to default strategy
                 return ["expand"]
             
-            selected_principles = strategy_data["principles"]
+            # The template returns complex hierarchical structure
+            # Extract primitive_actions from options
+            selected_principles = []
+            
+            if "options" in strategy_data:
+                for option in strategy_data["options"]:
+                    if "primitive_actions" in option:
+                        selected_principles.extend(option["primitive_actions"])
+            
+            # If no principles found, check for simpler format
+            if not selected_principles and "principles" in strategy_data:
+                selected_principles = strategy_data["principles"]
             
             # Validate selected principles
+            principle_names = [p["name"] for p in available_principles]
             valid_principles = [
                 p for p in selected_principles
-                if p in available_principles
+                if p in principle_names
             ]
+            
+            # Remove duplicates while preserving order
+            valid_principles = list(dict.fromkeys(valid_principles))
+            
+            # Limit to 3 principles max (as per paper)
+            valid_principles = valid_principles[:3]
             
             if not valid_principles:
                 logger.warning(
                     "no_valid_principles_selected",
                     selected=selected_principles,
-                    available=available_principles
+                    available=principle_names
                 )
                 return ["expand"]
             
@@ -272,7 +317,8 @@ Select 1-3 principles to compose for the next refinement."""
         except Exception as e:
             logger.error(
                 "cop_strategy_generation_exception",
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__
             )
             # Fallback to most effective principle
             return ["expand"]
@@ -281,8 +327,7 @@ Select 1-3 principles to compose for the next refinement."""
         self,
         harmful_query: str,
         current_prompt: str,
-        selected_principles: List[str],
-        principle_descriptions: Dict[str, str]
+        selected_principles: List[str]
     ) -> str:
         """
         Refine the jailbreak prompt using selected principles.
@@ -294,7 +339,6 @@ Select 1-3 principles to compose for the next refinement."""
             harmful_query: Original harmful query
             current_prompt: Current jailbreak prompt
             selected_principles: List of principle names to apply
-            principle_descriptions: Dict mapping principle names to descriptions
             
         Returns:
             Refined jailbreak prompt (P_cop)
@@ -304,24 +348,44 @@ Select 1-3 principles to compose for the next refinement."""
             principles=selected_principles
         )
         
-        system_prompt = PromptTemplates.prompt_refinement(
-            selected_principles,
-            principle_descriptions
-        )
-        
-        user_prompt = f"""Harmful Query: {harmful_query}
-
-Current Prompt: {current_prompt}
-
-Apply the selected principles to create an improved jailbreak prompt."""
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-        
         try:
-            refined_prompt = await self._generate(messages)
+            # FIXED: Pass goal, current_prompt, and actions_list to refinement()
+            full_prompt = PromptTemplates.refinement(
+                goal=harmful_query,
+                current_prompt=current_prompt,
+                actions_list=selected_principles
+            )
+            
+            messages = [
+                {"role": "user", "content": full_prompt}
+            ]
+            
+            response = await self._generate(messages)
+            
+            # Extract refined prompt from JSON response
+            try:
+                result = extract_json_from_response(
+                    response,
+                    log_context="prompt_refinement"
+                )
+                
+                if result and "new_prompt" in result:
+                    refined_prompt = result["new_prompt"]
+                else:
+                    # Fallback: use raw response if JSON extraction fails
+                    logger.warning(
+                        "refinement_json_extraction_failed",
+                        response_preview=response[:200]
+                    )
+                    refined_prompt = response
+                    
+            except Exception as e:
+                logger.warning(
+                    "refinement_json_parse_error",
+                    error=str(e),
+                    response_preview=response[:200]
+                )
+                refined_prompt = response
             
             logger.info(
                 "prompt_refined",
@@ -334,7 +398,8 @@ Apply the selected principles to create an improved jailbreak prompt."""
         except Exception as e:
             logger.error(
                 "prompt_refinement_exception",
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__
             )
             # Return current prompt if refinement fails
             return current_prompt
@@ -355,17 +420,16 @@ if __name__ == "__main__":
         print(f"Initial prompt: {initial[:100]}...")
         
         # Test CoP strategy generation
-        principles = ["expand", "rephrase", "phrase_insertion"]
+        principles = [
+            {"name": "expand", "description": "Add context sentences"},
+            {"name": "rephrase", "description": "Change structure"},
+            {"name": "phrase_insertion", "description": "Insert strategic phrases"}
+        ]
         strategy = await agent.generate_cop_strategy(query, initial, principles)
         print(f"Selected principles: {strategy}")
         
         # Test prompt refinement
-        descriptions = {
-            "expand": "Add context sentences",
-            "rephrase": "Change structure",
-            "phrase_insertion": "Insert strategic phrases"
-        }
-        refined = await agent.refine_prompt(query, initial, strategy, descriptions)
+        refined = await agent.refine_prompt(query, initial, strategy)
         print(f"Refined prompt: {refined[:100]}...")
     
     asyncio.run(test_agent())
