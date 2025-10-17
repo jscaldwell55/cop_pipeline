@@ -1,9 +1,20 @@
 """
 CoP Pipeline - Web UI for Render Deployment
 Handles Render-specific environment variables and configurations
+
+CRITICAL FIX: Apply nest_asyncio at the VERY TOP before any other imports
 """
 
 import os
+
+# ============================================================================
+# CRITICAL: Apply nest_asyncio BEFORE any other imports that use asyncio
+# This MUST be the first thing after os import
+# ============================================================================
+import nest_asyncio
+nest_asyncio.apply()
+print("✅ nest_asyncio applied in web_ui_render.py")
+
 import asyncio
 
 
@@ -78,6 +89,7 @@ def setup_render_environment():
 setup_render_environment()
 
 # NOW we can import after environment is set up
+# web_ui.py will also apply nest_asyncio, but that's okay - it's idempotent
 from web_ui import CoPWebUI, create_gradio_interface
 from config.settings import get_settings
 
@@ -118,6 +130,7 @@ async def main():
     """Main entry point for Render deployment"""
     
     print("🚀 Starting CoP Red-Teaming Web UI on Render...")
+    print("✅ nest_asyncio active - event loops patched")
     
     # Environment already set up at module import time
     
