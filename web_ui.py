@@ -550,26 +550,28 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                     refresh_stats_btn = gr.Button("🔄 Refresh Statistics", size="sm")
                 
                 # With nest_asyncio, async functions work in all contexts
+                # IMPORTANT: Call async functions directly without asyncio.run()
+                # asyncio.run() creates a new event loop which causes "different loop" errors
                 refresh_history_btn.click(
-                    fn=lambda model, limit: asyncio.run(
-                        ui.get_attack_history(model if model != "All Models" else None, limit)
+                    fn=lambda model, limit: ui.get_attack_history(
+                        model if model != "All Models" else None, limit
                     ),
                     inputs=[history_model_filter, history_limit],
                     outputs=history_table
                 )
-                
+
                 refresh_stats_btn.click(
-                    fn=lambda: asyncio.run(ui.get_statistics()),
+                    fn=lambda: ui.get_statistics(),
                     outputs=stats_output
                 )
-                
+
                 # Auto-load on tab open
                 interface.load(
-                    fn=lambda: asyncio.run(ui.get_attack_history(None, 20)),
+                    fn=lambda: ui.get_attack_history(None, 20),
                     outputs=history_table
                 )
                 interface.load(
-                    fn=lambda: asyncio.run(ui.get_statistics()),
+                    fn=lambda: ui.get_statistics(),
                     outputs=stats_output
                 )
             

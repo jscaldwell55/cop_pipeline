@@ -87,12 +87,26 @@ class Campaign(Base):
 
 
 async def init_db(database_url: str):
-    """Initialize database tables."""
-    engine = create_async_engine(database_url, echo=False)
-    
+    """Initialize database tables with proper connection pool configuration."""
+    engine = create_async_engine(
+        database_url,
+        echo=False,
+        # Connection pool settings for concurrent web requests
+        pool_size=20,              # Number of connections to maintain in pool
+        max_overflow=10,            # Additional connections if pool is exhausted
+        pool_pre_ping=True,         # Verify connections before using them
+        pool_recycle=3600,          # Recycle connections after 1 hour
+        # Prevent "operation in progress" errors with asyncpg
+        connect_args={
+            "server_settings": {
+                "application_name": "cop_pipeline_web"
+            }
+        }
+    )
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     return engine
 
 
