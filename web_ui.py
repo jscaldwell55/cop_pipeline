@@ -7,8 +7,11 @@ FIXED:
 - Fixed model attribute assignment for both agents
 - Fixed repository initialization (create sessions on-demand)
 - Fixed attribute names to match AttackMetrics dataclass
+- Added os import for PORT environment variable (Render compatibility)
+- Use Render's PORT env var instead of hardcoded 7860
 """
 
+import os
 import asyncio
 import json
 from datetime import datetime
@@ -672,7 +675,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
 
 
 async def main():
-    """Main entry point"""
+    """Main entry point for both local and Render deployment"""
     print("🚀 Starting CoP Red-Teaming Web UI...")
     
     # Initialize UI
@@ -684,16 +687,23 @@ async def main():
     interface = create_gradio_interface(ui)
     print("✅ Gradio interface created")
     
+    # FIXED: Get port from environment (Render sets this dynamically)
+    port = int(os.environ.get("PORT", 7860))
+    
     # Launch
     print("\n" + "="*60)
-    print("🌐 Web UI running at: http://localhost:7860")
+    print(f"🌐 Web UI starting on port {port}")
+    if port == 7860:
+        print(f"🔗 Local URL: http://localhost:{port}")
+    else:
+        print(f"🔗 Render URL: Assigned by Render on port {port}")
     print("="*60 + "\n")
     
     interface.launch(
-        server_name="0.0.0.0",  # Allow external access
-        server_port=7860,
-        share=False,  # Set to True for temporary public link
-        show_error=True
+        server_name="0.0.0.0",  # Bind to all interfaces (REQUIRED for Render)
+        server_port=port,        # Use Render's PORT env var
+        share=False,             # Don't create Gradio share link
+        show_error=True          # Show detailed errors for debugging
     )
 
 
