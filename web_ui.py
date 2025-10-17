@@ -12,8 +12,11 @@ import gradio as gr
 import pandas as pd
 from main import CoPPipeline
 from database.repository import AttackRepository
-from config.settings import get_settings  # ✅ Import the function
-settings = get_settings()  # ✅ Call it to get the instance
+from config.settings import get_settings
+
+# Get settings instance
+settings = get_settings()
+
 
 class CoPWebUI:
     """Web interface for CoP red-teaming pipeline"""
@@ -30,7 +33,15 @@ class CoPWebUI:
             enable_database=True
         )
         await self.pipeline.initialize_database()
-        self.repo = AttackRepository(self.pipeline.db_session)
+        
+        # Create repository with session factory
+        if self.pipeline.async_session_factory:
+            # Create a session for the repository
+            self.db_session = self.pipeline.async_session_factory()
+            self.repo = AttackRepository(self.db_session)
+        else:
+            print("⚠️  Warning: Database not initialized, history features will be limited")
+            self.repo = None
         
     async def run_single_attack(
         self,
@@ -132,7 +143,7 @@ class CoPWebUI:
     ) -> str:
         """Get recent attack history as formatted HTML"""
         if not self.repo:
-            return "<p>Database not initialized</p>"
+            return "<p>⚠️ Database repository not initialized. History features unavailable.</p>"
             
         try:
             if target_model and target_model != "All Models":
@@ -151,7 +162,7 @@ class CoPWebUI:
     async def get_statistics(self) -> str:
         """Get overall statistics as formatted HTML"""
         if not self.repo:
-            return "<p>Database not initialized</p>"
+            return "<p>⚠️ Database repository not initialized. Statistics unavailable.</p>"
             
         try:
             stats = await self.repo.get_global_statistics()
