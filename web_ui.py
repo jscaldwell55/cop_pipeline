@@ -34,14 +34,15 @@ class CoPWebUI:
         )
         await self.pipeline.initialize_database()
         
-        # Create repository with session factory
-        if self.pipeline.async_session_factory:
-            # Create a session for the repository
-            self.db_session = self.pipeline.async_session_factory()
-            self.repo = AttackRepository(self.db_session)
-        else:
+        # Store the session factory, not a session instance
+        # We'll create new sessions for each query to avoid loop issues
+        self.async_session_factory = self.pipeline.async_session_factory
+        
+        if not self.async_session_factory:
             print("⚠️  Warning: Database not initialized, history features will be limited")
             self.repo = None
+        else:
+            print("✅ Database session factory ready")
         
     async def run_single_attack(
         self,

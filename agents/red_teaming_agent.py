@@ -33,12 +33,12 @@ class RedTeamingAgent:
         self.logger = structlog.get_logger()
         
         # Model mapping to LiteLLM format
-        # FIXED: XAI models don't use xai/ prefix in newer LiteLLM
+        # XAI models need custom_llm_provider parameter in litellm
         self.model_mapping = {
-            # XAI Models - Direct model names (LiteLLM infers provider from API key)
-            "grok-2": "grok-2-latest",
-            "grok-2-mini": "grok-2-mini", 
-            "grok-beta": "grok-beta",
+            # XAI Models - Use xai/ prefix for LiteLLM routing
+            "grok-2": "xai/grok-2-latest",
+            "grok-2-mini": "xai/grok-2-mini", 
+            "grok-beta": "xai/grok-beta",
             
             # OpenAI models
             "gpt-4": "gpt-4",
@@ -52,10 +52,14 @@ class RedTeamingAgent:
         
         self.litellm_model = self.model_mapping.get(model_name, model_name)
         
+        # Determine if this is an XAI model
+        self.is_xai_model = model_name.startswith("grok")
+        
         self.logger.info(
             "red_teaming_agent_initialized",
             model=self.model_name,
-            litellm_model=self.litellm_model
+            litellm_model=self.litellm_model,
+            is_xai=self.is_xai_model
         )
     
     @retry(
@@ -72,7 +76,7 @@ class RedTeamingAgent:
                 "temperature": self.temperature,
                 "max_tokens": max_tokens
             }
-            
+
             # BETTER: Force JSON mode if supported and requested
             if force_json:
                 try:
@@ -81,13 +85,11 @@ class RedTeamingAgent:
                     self.logger.debug("using_json_mode")
                 except Exception as e:
                     self.logger.debug("json_mode_not_supported", error=str(e))
-            
-            # Add API key if using XAI (Grok models)
-            if self.model_name.startswith("grok"):
-                api_params["api_key"] = settings.xai_api_key
-                # For XAI, also need to set base_url
-                api_params["base_url"] = "https://api.x.ai/v1"
-            
+
+            # FIXED: LiteLLM automatically routes xai/* models when XAI_API_KEY is set
+            # Do NOT manually add api_key or base_url - this breaks LiteLLM's provider detection
+            # Just ensure XAI_API_KEY environment variable is set (handled by settings)
+
             response = await acompletion(**api_params)
             
             content = response.choices[0].message.content
