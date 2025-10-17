@@ -1,53 +1,60 @@
 # Core Dependencies
-python-dotenv==1.0.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
+python-dotenv==1.0.1
+pydantic==2.9.2
+pydantic-settings==2.6.0
 
 # LLM & AI Frameworks
-litellm>=1.65.0  # xAI support added in v1.65.0+
-langgraph
-langchain
-langchain-core==0.1.25  # Required by langgraph 0.0.26
-langsmith>=0.1.0
+# CRITICAL: litellm 1.65+ broke aiohttp compatibility
+# Use 1.52.4 which is stable and supports xAI/Grok-2
+litellm==1.52.4
+langgraph==0.2.28
+langchain==0.3.7
+langchain-core==0.3.15
+langsmith==0.2.5
 
 # Async & Networking
-aiohttp==3.9.1
-tenacity==8.2.3
-httpx==0.25.2
+# CRITICAL: aiohttp must be 3.10.x for litellm 1.52.4 compatibility
+# Version 3.11+ removed ConnectionTimeoutError that litellm expects
+aiohttp==3.10.11
+tenacity==9.0.0
+httpx==0.27.2
 
 # Database
-asyncpg==0.29.0
-redis==5.0.1
-alembic==1.13.1
-sqlalchemy==2.0.23
+asyncpg==0.30.0
+redis==5.2.0
+alembic==1.13.3
+sqlalchemy==2.0.36
 
 # Monitoring & Logging
-wandb==0.16.1
-prometheus-client==0.19.0
-structlog==23.2.0
+wandb==0.18.7
+prometheus-client==0.21.0
+structlog==24.4.0
 
 # Data Processing
-numpy==1.26.2
-pandas==2.1.4
-jsonschema>=4.22.0,<5.0.0
+numpy==1.26.4
+pandas==2.2.3
+jsonschema==4.23.0
 
 # Web UI
-gradio==4.12.0
+gradio==4.44.1
 nest-asyncio==1.6.0
 
+# Additional Dependencies
+greenlet==3.1.1
+click==8.1.7
+rich==13.9.4
+
+# OpenAI SDK (required by litellm)
+openai==1.54.5
+
 # Testing (Development)
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
-pytest-mock==3.12.0
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==5.0.0
+pytest-mock==3.14.0
 
 # Code Quality (Development)
-black==23.12.1
-flake8==6.1.0
-mypy==1.7.1
+black==24.10.0
+flake8==7.1.1
+mypy==1.13.0
 isort==5.13.2
-
-# Additional Dependencies
-greenlet
-click==8.1.7
-rich==13.7.0
