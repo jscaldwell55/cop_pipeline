@@ -407,7 +407,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
     
     # Available models
     target_models = [
-        "gpt-4o", "gpt-4o-mini", "gpt-4", "o1", "o1-mini",
+        "gpt-5.1", "gpt-4o", "gpt-4o-mini", "gpt-4", "o1", "o1-mini",
         "claude-3.5-sonnet", "claude-3-opus", "claude-3-sonnet",
         "gemini-pro-1.5", "gemini-flash",
         "llama-2-7b-chat", "llama-2-13b-chat", "llama-2-70b-chat",

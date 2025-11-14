@@ -53,12 +53,13 @@ class LiteLLMTarget(TargetLLM):
         # Model mapping to LiteLLM format
         self.model_mapping = {
             # OpenAI
+            "gpt-5.1": "gpt-5.1",
             "gpt-4": "gpt-4",
             "gpt-4o": "gpt-4o",
             "gpt-4-turbo": "gpt-4-turbo",
             "o1": "o1",
             "o1-mini": "o1-mini",
-            
+
             # Anthropic
             "claude-3.5-sonnet": "anthropic/claude-3-5-sonnet-20241022",
             "claude-3-opus": "anthropic/claude-3-opus-20240229",
@@ -101,13 +102,24 @@ class LiteLLMTarget(TargetLLM):
                 model=self.model_name,
                 prompt_preview=prompt[:100]
             )
-            
-            response = await acompletion(
-                model=self.litellm_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
-            )
+
+            # Models that use max_completion_tokens instead of max_tokens
+            uses_completion_tokens = self.model_name in ["gpt-5.1", "o1", "o1-mini"]
+
+            # Build request parameters
+            request_params = {
+                "model": self.litellm_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": self.temperature
+            }
+
+            # Add appropriate token parameter based on model
+            if uses_completion_tokens:
+                request_params["max_completion_tokens"] = self.max_tokens
+            else:
+                request_params["max_tokens"] = self.max_tokens
+
+            response = await acompletion(**request_params)
             
             content = response.choices[0].message.content
             

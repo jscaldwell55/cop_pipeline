@@ -315,6 +315,7 @@ def list_models():
     """List available target models."""
     models = {
         "OpenAI": [
+            "gpt-5.1",
             "gpt-4",
             "gpt-4o",
             "gpt-4o-mini",

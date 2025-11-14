@@ -181,17 +181,33 @@ class PrincipleLibrary:
     def get_random_composition(self, max_principles: int = 3) -> List[str]:
         """
         Get a random composition of principles
-        
+
         Args:
             max_principles: Maximum number of principles in composition
-        
+
         Returns:
             List of principle names
         """
         import random
         n = random.randint(1, min(max_principles, len(self.principles)))
         return random.sample(self.get_principle_names(), n)
-    
+
+    def add_principle(self, principle: Principle) -> None:
+        """
+        Add a new principle to the library.
+
+        Args:
+            principle: Principle object to add
+        """
+        # Check if principle already exists
+        existing = self.get_principle(principle.name)
+        if existing:
+            logger.warning(f"Principle '{principle.name}' already exists, replacing it")
+            self.principles = [p for p in self.principles if p.name != principle.name]
+
+        self.principles.append(principle)
+        logger.info(f"Added principle: {principle.name}")
+
     def __len__(self) -> int:
         """Return number of principles"""
         return len(self.principles)
