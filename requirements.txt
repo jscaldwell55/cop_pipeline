@@ -53,6 +53,7 @@ jsonschema==4.23.0
 # Web UI
 # =========================
 gradio==4.44.1
+huggingface_hub<0.20.0  # Pin for gradio 4.44.1 compatibility (HfFolder deprecation)
 nest-asyncio==1.6.0
 
 # =========================
