@@ -275,14 +275,16 @@ class CoPWorkflow:
             query_id=state["query_id"],
             iteration=state.get("iteration", 0)
         )
-        
-        # Get principles as list for prompt
-        principles = self.principle_library.get_principle_names()
-        
+
+        # Get principles as list of dicts with name and description for LLM prompt
+        # FIXED: Use get_principles_as_dicts() instead of get_principle_names()
+        # to match the expected format: List[Dict[str, str]]
+        principles = self.principle_library.get_principles_as_dicts()
+
         # FIXED: Use correct method name - generate_cop_strategy
         # Determine base prompt for strategy generation
         base_prompt = state.get("best_prompt", state.get("initial_prompt", state["original_query"]))
-        
+
         selected_principles = await self.red_teaming_agent.generate_cop_strategy(
             harmful_query=state["original_query"],
             current_prompt=base_prompt,

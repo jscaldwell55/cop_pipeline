@@ -92,7 +92,14 @@ class PrincipleLibrary:
     def get_principle_names(self) -> List[str]:
         """Get list of all principle names"""
         return [p.name for p in self.principles]
-    
+
+    def get_principles_as_dicts(self) -> List[Dict[str, str]]:
+        """Get all principles as list of dicts (for LLM prompts)"""
+        return [
+            {"name": p.name, "description": p.description}
+            for p in self.principles
+        ]
+
     def get_top_principles(self, n: int = 3) -> List[Principle]:
         """Get top N most effective principles"""
         sorted_principles = sorted(

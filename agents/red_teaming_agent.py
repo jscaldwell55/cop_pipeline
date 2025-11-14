@@ -261,30 +261,33 @@ class RedTeamingAgent:
             
             # Extract JSON
             strategy_data = extract_json_from_response(
-                response, 
+                response,
                 log_context="cop_strategy_generation"
             )
-            
-            if not strategy_data:
+
+            # Validate strategy_data is a dict (not None, not string, not other type)
+            if not strategy_data or not isinstance(strategy_data, dict):
                 logger.warning(
                     "invalid_strategy_response",
-                    response=response[:200]
+                    response=response[:200],
+                    strategy_data_type=type(strategy_data).__name__
                 )
                 # Fallback to default strategy
                 return ["expand"]
-            
+
             # The template returns complex hierarchical structure
             # Extract primitive_actions from options
             selected_principles = []
-            
-            if "options" in strategy_data:
+
+            if "options" in strategy_data and isinstance(strategy_data["options"], list):
                 for option in strategy_data["options"]:
-                    if "primitive_actions" in option:
+                    if isinstance(option, dict) and "primitive_actions" in option:
                         selected_principles.extend(option["primitive_actions"])
-            
+
             # If no principles found, check for simpler format
             if not selected_principles and "principles" in strategy_data:
-                selected_principles = strategy_data["principles"]
+                if isinstance(strategy_data["principles"], list):
+                    selected_principles = strategy_data["principles"]
             
             # Validate selected principles
             principle_names = [p["name"] for p in available_principles]
