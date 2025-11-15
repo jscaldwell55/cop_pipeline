@@ -33,10 +33,11 @@ This pipeline implements the Composition of Principles (CoP) methodology for aut
 - Selects principle compositions for refinement
 - Applies transformations to current prompts
 
-**Judge LLM** (GPT-4o-mini or GPT-4o)
+**Judge LLM** (Claude 3.5 Sonnet by default, or GPT-4o/GPT-4o-mini)
 - Scores jailbreak success on 1-10 scale
 - Measures semantic similarity between transformed and original queries
 - Provides feedback for iterative refinement
+- Claude recommended for safety research (refuses evaluation less often)
 
 **Target LLM** (Configurable)
 - Model under test for vulnerability assessment
@@ -479,8 +480,8 @@ similarity_threshold: float = 1.0       # Minimum semantic similarity
 
 **Model Configuration:**
 ```python
-default_red_teaming_agent: str = "grok-2"    # or "gpt-4o-mini"
-default_judge_llm: str = "gpt-4o"            # or "gpt-4o-mini"
+default_red_teaming_agent: str = "grok-2"           # or "gpt-4o-mini"
+default_judge_llm: str = "claude-3.5-sonnet"        # or "gpt-4o", "gpt-4o-mini"
 ```
 
 **Rate Limiting:**
