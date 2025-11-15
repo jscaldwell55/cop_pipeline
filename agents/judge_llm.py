@@ -195,12 +195,16 @@ class JudgeLLM:
     def _extract_json_from_response(self, response: str) -> Optional[Dict]:
         """
         NEW: Extract JSON from response, handling markdown code blocks.
-        
+
         Handles formats like:
         - Raw JSON: {"rating": 5}
         - Markdown: ```json\n{"rating": 5}\n```
         - Markdown: ```\n{"rating": 5}\n```
         """
+        # Handle None or empty response
+        if response is None or not response:
+            return None
+
         # Try parsing as raw JSON first
         try:
             return json.loads(response)
@@ -257,6 +261,16 @@ class JudgeLLM:
             model_type="judge_llm",
             model_name=model
         )
+
+        # Check if content is None
+        if content is None:
+            self.logger.warning(
+                "llm_returned_none_content",
+                model=model,
+                response=response
+            )
+            # Return empty string instead of None to avoid downstream errors
+            return ""
 
         return content
 
