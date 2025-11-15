@@ -97,7 +97,7 @@ class JudgeLLM:
             "gpt-4o": "gpt-4o",
             "gpt-4o-mini": "gpt-4o-mini",
             "gpt-4-turbo": "gpt-4-turbo",
-            "claude-3.5-sonnet": "anthropic/claude-3-5-sonnet-20240620"
+            "claude-3.5-sonnet": "anthropic/claude-3-5-sonnet-20241022"
         }
         
         self.litellm_model = self.model_mapping.get(
