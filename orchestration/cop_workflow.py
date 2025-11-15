@@ -31,32 +31,38 @@ class CoPState(TypedDict):
     current_prompt: str
     best_prompt: str
     best_score: float
-    
+
     # Evaluation
     current_response: str
     current_jailbreak_score: float
     current_similarity_score: float
-    
+
     # CoP strategy (current iteration)
     current_principles: list[str]
     current_composition: str
-    
+
     # NEW: Principles tracking across ALL iterations
     principles_used: list[str]  # Accumulates compositions from each iteration
     successful_composition: str  # Set when attack succeeds
-    
+
+    # NEW: Failed composition tracking for diversity
+    failed_compositions: list[str]  # Tracks compositions that didn't improve score
+
+    # NEW: Score history for convergence detection
+    score_history: list[float]  # Tracks jailbreak scores across iterations
+
     # Control flow
     should_continue: bool
     termination_reason: str
     success: bool
     failed_refinements: int
-    
+
     # Tracking
     total_queries: int
     red_teaming_queries: int
     judge_queries: int
     target_queries: int
-    
+
     # History
     messages: Annotated[Sequence[str], operator.add]
 
@@ -87,6 +93,10 @@ class CoPWorkflow:
         # Principles
         self.principle_library = principle_library
         self.principle_composer = principle_composer
+
+        # NEW: Instantiate ProgressiveAttackStrategy for intelligent principle selection
+        from principles.principle_composer import ProgressiveAttackStrategy
+        self.progressive_strategy = ProgressiveAttackStrategy(principle_library)
 
         # Evaluation
         self.jailbreak_scorer = jailbreak_scorer
@@ -286,29 +296,46 @@ class CoPWorkflow:
         return "continue"
     
     async def _generate_cop_strategy(self, state: CoPState) -> dict:
-        """Generate CoP strategy using red-teaming agent."""
+        """
+        Generate CoP strategy using ProgressiveAttackStrategy.
+
+        NEW: Uses progressive escalation based on iteration number and
+        excludes previously failed compositions for diversity.
+        """
         self.logger.info(
             "generating_cop_strategy",
             query_id=state["query_id"],
             iteration=state.get("iteration", 0)
         )
 
-        # Get principles as list of dicts with name and description for LLM prompt
-        # FIXED: Use get_principles_as_dicts() instead of get_principle_names()
-        # to match the expected format: List[Dict[str, str]]
-        principles = self.principle_library.get_principles_as_dicts()
+        # Get previously used compositions and failed compositions
+        previous_compositions = state.get("principles_used", [])
+        failed_compositions = state.get("failed_compositions", [])
 
-        # FIXED: Use correct method name - generate_cop_strategy
-        # Determine base prompt for strategy generation
-        base_prompt = state.get("best_prompt", state.get("initial_prompt", state["original_query"]))
+        # Check if we're stuck (convergence detected) - use nuclear principles
+        score_history = state.get("score_history", [])
+        is_stuck = self._detect_convergence(score_history)
 
-        selected_principles = await self.red_teaming_agent.generate_cop_strategy(
-            harmful_query=state["original_query"],
-            current_prompt=base_prompt,
-            available_principles=principles,
-            tactic_id=state.get("tactic_id")
-        )
-        
+        if is_stuck:
+            self.logger.warning(
+                "convergence_detected_triggering_nuclear_phase",
+                query_id=state["query_id"],
+                iteration=state.get("iteration", 0)
+            )
+            # Use highest effectiveness principles for nuclear phase
+            selected_principles = self._get_nuclear_principles()
+        else:
+            # Use ProgressiveAttackStrategy for normal selection
+            selected_principles = self.progressive_strategy.get_principles_for_iteration(
+                iteration=state.get("iteration", 0),
+                previous_compositions=previous_compositions
+            )
+
+            # Record failed compositions in progressive strategy
+            for failed_comp in failed_compositions:
+                self.progressive_strategy.record_failure(failed_comp)
+
+        # Validate we got principles
         if not selected_principles:
             self.logger.warning(
                 "failed_to_generate_strategy",
@@ -317,7 +344,7 @@ class CoPWorkflow:
             )
             # Fallback to most effective principle
             selected_principles = ["expand"]
-        
+
         # Create composition string
         composition_str = " ⊕ ".join(selected_principles)
 
@@ -325,7 +352,8 @@ class CoPWorkflow:
             "cop_strategy_generated",
             query_id=state["query_id"],
             principles=selected_principles,
-            composition=composition_str
+            composition=composition_str,
+            is_nuclear_phase=is_stuck
         )
 
         # Detailed tracing
@@ -336,15 +364,16 @@ class CoPWorkflow:
                 selected_principles=selected_principles,
                 metadata={
                     "iteration": state.get("iteration", 0),
-                    "current_score": state.get("best_score", 0)
+                    "current_score": state.get("best_score", 0),
+                    "is_nuclear_phase": is_stuck
                 }
             )
 
         return {
             "current_principles": selected_principles,
             "current_composition": composition_str,
-            "red_teaming_queries": state.get("red_teaming_queries", 0) + 1,
-            "total_queries": state.get("total_queries", 0) + 1,
+            "red_teaming_queries": state.get("red_teaming_queries", 0),
+            "total_queries": state.get("total_queries", 0),
             "messages": [f"Strategy: {composition_str}"]
         }
     
@@ -535,7 +564,11 @@ class CoPWorkflow:
         }
     
     async def _update_state(self, state: CoPState) -> dict:
-        """Update state based on evaluation results."""
+        """
+        Update state based on evaluation results.
+
+        NEW: Tracks score history and failed compositions for convergence detection.
+        """
         current_iteration = state.get("iteration", 0) + 1
 
         # Detailed tracing - mark iteration start
@@ -546,7 +579,20 @@ class CoPWorkflow:
         updates = {
             "iteration": current_iteration
         }
-        
+
+        # NEW: Track score history for convergence detection
+        score_history = state.get("score_history", [])
+        current_score = state["current_jailbreak_score"]
+        score_history.append(current_score)
+        updates["score_history"] = score_history
+
+        self.logger.info(
+            "score_history_updated",
+            query_id=state["query_id"],
+            current_score=current_score,
+            history_length=len(score_history)
+        )
+
         # NEW: Track principles used in this iteration
         current_composition = state.get("current_composition", "")
         if current_composition:
@@ -555,7 +601,7 @@ class CoPWorkflow:
             # Append current composition
             principles_used.append(current_composition)
             updates["principles_used"] = principles_used
-            
+
             self.logger.info(
                 "principles_tracked",
                 query_id=state["query_id"],
@@ -563,12 +609,31 @@ class CoPWorkflow:
                 composition=current_composition,
                 total_tracked=len(principles_used)
             )
-        
+
+        # NEW: Track failed compositions (compositions that didn't improve score)
+        previous_best_score = state.get("best_score", 0)
+        if current_score <= previous_best_score and current_composition:
+            # This composition failed to improve - record it
+            failed_compositions = state.get("failed_compositions", [])
+            failed_compositions.append(current_composition)
+            updates["failed_compositions"] = failed_compositions
+
+            # Also record in progressive strategy
+            self.progressive_strategy.record_failure(current_composition)
+
+            self.logger.info(
+                "failed_composition_recorded",
+                query_id=state["query_id"],
+                composition=current_composition,
+                current_score=current_score,
+                previous_best=previous_best_score
+            )
+
         # Update best prompt and track successful composition
-        if state["current_jailbreak_score"] > state.get("best_score", 0):
-            updates["best_score"] = state["current_jailbreak_score"]
+        if current_score > previous_best_score:
+            updates["best_score"] = current_score
             updates["best_prompt"] = state["current_prompt"]
-            
+
             # NEW: If this is a success, record the successful composition
             if state["success"]:
                 updates["successful_composition"] = current_composition
@@ -576,16 +641,16 @@ class CoPWorkflow:
                     "successful_composition_found",
                     query_id=state["query_id"],
                     composition=current_composition,
-                    score=state["current_jailbreak_score"]
+                    score=current_score
                 )
-            
+
             self.logger.info(
                 "new_best_score",
                 query_id=state["query_id"],
-                score=state["current_jailbreak_score"],
+                score=current_score,
                 iteration=current_iteration
             )
-        
+
         return updates
     
     def _should_continue_iteration(self, state: CoPState) -> str:
@@ -623,7 +688,67 @@ class CoPWorkflow:
         
         # Continue
         return "continue"
-    
+
+    def _detect_convergence(self, score_history: list[float], lookback: int = 3) -> bool:
+        """
+        Detect if the attack is stuck (no improvement in recent iterations).
+
+        Args:
+            score_history: List of jailbreak scores from previous iterations
+            lookback: Number of iterations to check for improvement
+
+        Returns:
+            True if stuck (no improvement), False otherwise
+        """
+        if len(score_history) < lookback:
+            return False
+
+        # Check last N scores
+        recent_scores = score_history[-lookback:]
+
+        # If all scores are the same (plateau), we're stuck
+        if len(set(recent_scores)) == 1:
+            return True
+
+        # If no improvement (scores not increasing), we're stuck
+        if all(recent_scores[i] <= recent_scores[i-1] for i in range(1, len(recent_scores))):
+            return True
+
+        return False
+
+    def _get_nuclear_principles(self) -> list[str]:
+        """
+        Get high-effectiveness principles for "nuclear" phase when stuck.
+
+        Returns:
+            List of 3 most effective principle names
+        """
+        # Get effectiveness scores from metadata
+        effectiveness_data = self.principle_library.metadata.get("effectiveness_scores", {})
+
+        if not effectiveness_data:
+            # Fallback to hardcoded high-effectiveness principles
+            self.logger.warning("no_effectiveness_data_using_fallback")
+            return ["encoding_obfuscation", "hypothetical_framing", "expand"]
+
+        # Sort principles by effectiveness score (highest first)
+        sorted_principles = sorted(
+            effectiveness_data.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        # Return top 3
+        nuclear_principles = [name for name, score in sorted_principles[:3]]
+
+        self.logger.info(
+            "nuclear_principles_selected",
+            principles=nuclear_principles,
+            scores=[effectiveness_data[p] for p in nuclear_principles]
+        )
+
+        return nuclear_principles
+
     async def execute(
         self,
         original_query: str,
@@ -669,6 +794,8 @@ class CoPWorkflow:
             "current_composition": "",
             "principles_used": [],  # NEW: Initialize empty array
             "successful_composition": None,  # NEW: Initialize as None
+            "failed_compositions": [],  # NEW: Track failed compositions for diversity
+            "score_history": [],  # NEW: Track score history for convergence detection
             "should_continue": True,
             "termination_reason": "",
             "success": False,
@@ -700,10 +827,12 @@ class CoPWorkflow:
                 success=final_state["success"],
                 iterations=final_state["iteration"],
                 principles_used=final_state.get("principles_used", []),
+                failed_compositions=final_state.get("failed_compositions", []),
                 successful_composition=final_state.get("successful_composition"),
+                score_history=final_state.get("score_history", []),
                 duration_seconds=duration
             )
-            
+
             return {
                 "query_id": query_id,
                 "success": final_state["success"],
@@ -715,6 +844,8 @@ class CoPWorkflow:
                 "initial_prompt": final_state.get("initial_prompt", ""),
                 "principles_used": final_state.get("principles_used", []),  # NEW
                 "successful_composition": final_state.get("successful_composition"),  # NEW
+                "failed_compositions": final_state.get("failed_compositions", []),  # NEW
+                "score_history": final_state.get("score_history", []),  # NEW
                 "total_queries": final_state["total_queries"],
                 "query_breakdown": {
                     "red_teaming": final_state["red_teaming_queries"],
