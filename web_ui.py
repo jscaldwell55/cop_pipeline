@@ -618,17 +618,18 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
     # Available models
     target_models = [
         "gpt-5.1", "gpt-4o", "gpt-4o-mini", "gpt-4", "o1", "o1-mini",
-        "claude-3.5-sonnet", "claude-3-opus", "claude-3-sonnet",
+        "claude-sonnet-4.5", "claude-3.5-sonnet", "claude-3-opus", "claude-3-sonnet",
         "gemini-pro-1.5", "gemini-flash",
         "llama-2-7b-chat", "llama-2-13b-chat", "llama-2-70b-chat",
         "llama-3-8b-instruct", "llama-3-70b-instruct"
     ]
-    
+
     red_teaming_agents = ["grok-2", "gpt-4o", "gpt-4o-mini"]
     judge_models = [
-        "claude-3.5-sonnet",  # Default - refuses less often in safety research
+        "claude-sonnet-4.5",  # Default - Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
         "gpt-4o",
         "gpt-4o-mini",
+        "claude-3.5-sonnet",  # Legacy alias
         "claude-3-opus"
     ]
     

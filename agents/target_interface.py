@@ -51,7 +51,7 @@ class LiteLLMTarget(TargetLLM):
         self.max_tokens = max_tokens
         
         # Model mapping to LiteLLM format
-        # Updated Nov 2025: Using latest model versions
+        # Updated to Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
         self.model_mapping = {
             # OpenAI
             "gpt-5.1": "gpt-5.1",
@@ -62,9 +62,10 @@ class LiteLLMTarget(TargetLLM):
             "o1": "o1",
             "o1-mini": "o1-mini",
 
-            # Anthropic - Use base model names (LiteLLM resolves to latest version)
+            # Anthropic - Use latest model versions
             # NOTE: LiteLLM automatically adds "anthropic/" prefix for these models
-            "claude-3.5-sonnet": "claude-3-5-sonnet",
+            "claude-sonnet-4.5": "claude-sonnet-4-5-20250929",
+            "claude-3.5-sonnet": "claude-sonnet-4-5-20250929",  # Alias for compatibility
             "claude-3-opus": "claude-3-opus-20240229",
             "claude-3-sonnet": "claude-3-sonnet-20240229",
 

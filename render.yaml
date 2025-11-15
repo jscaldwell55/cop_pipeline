@@ -82,7 +82,7 @@ services:
       - key: DEFAULT_RED_TEAMING_AGENT
         value: "grok-2"
       - key: DEFAULT_JUDGE_LLM
-        value: "claude-3.5-sonnet"  # Updated: matches code default, better for safety research, auto-falls back to gpt-4o if unavailable
+        value: "claude-sonnet-4.5"  # Updated: Claude Sonnet 4.5 (claude-sonnet-4-5-20250929), better for safety research, auto-falls back to gpt-4o if unavailable
       - key: MAX_CONCURRENT_REQUESTS
         value: "5"
       - key: LOG_LEVEL

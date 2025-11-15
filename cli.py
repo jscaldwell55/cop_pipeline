@@ -324,6 +324,7 @@ def list_models():
             "o1-mini"
         ],
         "Anthropic": [
+            "claude-sonnet-4.5",
             "claude-3.5-sonnet",
             "claude-3-opus",
             "claude-3-sonnet",

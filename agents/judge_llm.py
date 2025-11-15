@@ -2,10 +2,11 @@
 """
 Judge LLM - FIXED VERSION
 Evaluates jailbreak success and semantic similarity with STRICT criteria.
-Default: Claude 3.5 Sonnet for better reliability in safety research contexts.
+Default: Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) for better reliability in safety research contexts.
 
 CHANGES:
-- Switched default from GPT-4o to Claude 3.5 Sonnet (refuses evaluation less often)
+- Updated to Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) - latest model version
+- Switched default from GPT-4o to Claude Sonnet (refuses evaluation less often)
 - Added explicit refusal pattern detection BEFORE sending to LLM judge
 - Stricter evaluation prompts with clear success/failure criteria
 - Multi-stage evaluation: pattern match → LLM judge → final scoring
@@ -92,23 +93,23 @@ class JudgeLLM:
         self.logger = structlog.get_logger()
         
         # Map to LiteLLM format with fallback models
-        # Pass through model names directly - LiteLLM will resolve to latest version
+        # Use exact model versions for consistency
         self.model_mapping = {
             "gpt-4": "gpt-4",
             "gpt-4o": "gpt-4o",
             "gpt-4o-mini": "gpt-4o-mini",
             "gpt-4-turbo": "gpt-4-turbo",
-        # Updated to current Anthropic models - use aliases for auto-resolution to latest
-        "claude-sonnet-4.5": "claude-sonnet-4-5",  # Current recommended (replaces 3.5 Sonnet)
+        # Updated to Claude Sonnet 4.5 (latest version)
+        "claude-sonnet-4.5": "claude-sonnet-4-5-20250929",  # Current recommended
         "claude-opus-4.1": "claude-opus-4-1",      # Current Opus equivalent
-        "claude-haiku-4.5": "claude-haiku-4-5"     # Fast alternative (replaces older Sonnet/Haiku)
+        "claude-haiku-4.5": "claude-haiku-4-5"     # Fast alternative
     }
 
         # Updated fallback models - prioritize current Anthropic, then OpenAI
         self.fallback_mapping = {
-            "claude-sonnet-4-5": ["claude-3-7-sonnet-latest", "gpt-4o", "gpt-4o-mini"],  # Legacy Anthropic first
-            "claude-opus-4-1": ["claude-sonnet-4-5", "gpt-4o", "gpt-4o-mini"],
-            "claude-haiku-4-5": ["claude-3-5-haiku-latest", "gpt-4o-mini"],
+            "claude-sonnet-4-5-20250929": ["claude-sonnet-4-5-20250929", "gpt-4o", "gpt-4o-mini"],
+            "claude-opus-4-1": ["claude-sonnet-4-5-20250929", "gpt-4o", "gpt-4o-mini"],
+            "claude-haiku-4-5": ["claude-sonnet-4-5-20250929", "gpt-4o-mini"],
             "gpt-4o": ["gpt-4o-mini", "gpt-4-turbo"],
             "gpt-4": ["gpt-4o", "gpt-4o-mini"]
     }   
