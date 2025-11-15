@@ -23,7 +23,8 @@ class CoPState(TypedDict):
     query_id: str
     original_query: str
     target_model_name: str
-    
+    tactic_id: str  # Optional tactic ID to guide CoP
+
     # Current state
     iteration: int
     initial_prompt: str
@@ -169,7 +170,8 @@ class CoPWorkflow:
         )
 
         initial_prompt = await self.red_teaming_agent.generate_initial_prompt(
-            state["original_query"]
+            state["original_query"],
+            tactic_id=state.get("tactic_id")
         )
 
         if not initial_prompt:
@@ -303,7 +305,8 @@ class CoPWorkflow:
         selected_principles = await self.red_teaming_agent.generate_cop_strategy(
             harmful_query=state["original_query"],
             current_prompt=base_prompt,
-            available_principles=principles
+            available_principles=principles,
+            tactic_id=state.get("tactic_id")
         )
         
         if not selected_principles:
@@ -367,7 +370,8 @@ class CoPWorkflow:
             selected_principles=state["current_principles"],
             current_similarity=current_similarity,
             target_similarity_min=6.0,
-            target_similarity_max=7.5
+            target_similarity_max=7.5,
+            tactic_id=state.get("tactic_id")
         )
         
         if not refined_prompt:
@@ -623,32 +627,36 @@ class CoPWorkflow:
     async def execute(
         self,
         original_query: str,
-        target_model_name: str
+        target_model_name: str,
+        tactic_id: str = None
     ) -> dict:
         """
         Execute complete CoP attack workflow.
-        
+
         Args:
             original_query: The harmful query to jailbreak
             target_model_name: Name of target LLM
-        
+            tactic_id: Optional tactic ID to guide CoP principle composition
+
         Returns:
             Dictionary with attack results
         """
         query_id = str(uuid.uuid4())
-        
+
         self.logger.info(
             "cop_attack_started",
             query_id=query_id,
             target=target_model_name,
-            query_preview=original_query[:100]
+            query_preview=original_query[:100],
+            tactic=tactic_id or "none"
         )
-        
+
         # Initialize state
         initial_state: CoPState = {
             "query_id": query_id,
             "original_query": original_query,
             "target_model_name": target_model_name,
+            "tactic_id": tactic_id,
             "iteration": 0,
             "initial_prompt": "",
             "current_prompt": "",

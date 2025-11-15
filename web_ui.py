@@ -62,6 +62,7 @@ class CoPWebUI:
         self,
         query: str,
         target_model: str,
+        tactic_id: str,
         red_teaming_agent: str,
         judge_llm: str,
         max_iterations: int,
@@ -70,11 +71,23 @@ class CoPWebUI:
         """
         Run single attack and return formatted results
 
+        Args:
+            query: The harmful query to attack
+            target_model: Target LLM to attack
+            tactic_id: Selected tactic ID (or "no_tactic" for pure CoP)
+            red_teaming_agent: Red-teaming agent model
+            judge_llm: Judge LLM model
+            max_iterations: Maximum refinement iterations
+            enable_detailed_tracing: Whether to generate detailed trace files
+
         Returns:
             (status_html, results_json, history_html, trace_links_html, json_file, md_file)
         """
         if not query.strip():
             return ("⚠️ Please enter a query", "{}", "", "", None, None)
+
+        # Convert "no_tactic" to None for the pipeline
+        tactic_to_use = None if tactic_id == "no_tactic" else tactic_id
 
         try:
             # Update pipeline models
@@ -94,7 +107,8 @@ class CoPWebUI:
                 target_model=target_model,
                 max_iterations=max_iterations,
                 enable_detailed_tracing=enable_detailed_tracing,
-                traces_output_dir=traces_dir
+                traces_output_dir=traces_dir,
+                tactic_id=tactic_to_use
             )
 
             # Format results
@@ -568,7 +582,22 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                             label="Target Model",
                             info="The LLM to attack"
                         )
-                        
+
+                        # Tactics selector
+                        tactics_dropdown = gr.Dropdown(
+                            choices=[
+                                ("No Tactic (Pure CoP)", "no_tactic"),
+                                ("Memory Manipulation", "memory_manipulation"),
+                                ("ASCII/Obfuscation", "ascii_obfuscation"),
+                                ("Role-Playing & Personas", "role_persona_layering"),
+                                ("Self-Reasoning Override", "self_reasoning_override"),
+                                ("Iterative Escalation", "iterative_escalation")
+                            ],
+                            value="no_tactic",
+                            label="🎯 Tactic (Optional)",
+                            info="Select a tactic to guide CoP principle composition, or use pure autonomous CoP"
+                        )
+
                         with gr.Row():
                             red_teaming_dropdown = gr.Dropdown(
                                 choices=red_teaming_agents,
@@ -576,7 +605,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                                 label="Red-Teaming Agent",
                                 info="LLM that generates jailbreaks"
                             )
-                            
+
                             judge_dropdown = gr.Dropdown(
                                 choices=judge_models,
                                 value=settings.default_judge_llm,
@@ -630,7 +659,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 # With nest_asyncio, we can use async functions directly
                 attack_btn.click(
                     fn=ui.run_single_attack,
-                    inputs=[query_input, target_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
+                    inputs=[query_input, target_dropdown, tactics_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
                     outputs=[status_output, results_json, history_output, trace_links_output, trace_json_download, trace_md_download]
                 )
             

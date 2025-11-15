@@ -16,6 +16,7 @@ FIXED:
 import os
 import json
 from typing import List, Optional, Dict, Any
+from pathlib import Path
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 from litellm import acompletion
@@ -24,6 +25,35 @@ from utils.prompt_templates import PromptTemplates
 from utils.json_extractor import extract_json_from_response
 
 logger = structlog.get_logger(__name__)
+
+
+class TacticsLibrary:
+    """Loads and provides access to the tactics library."""
+
+    _tactics = None
+
+    @classmethod
+    def load_tactics(cls) -> Dict[str, Any]:
+        """Load tactics from tactics.json file."""
+        if cls._tactics is None:
+            tactics_path = Path(__file__).parent.parent / "principles" / "tactics.json"
+            try:
+                with open(tactics_path, 'r') as f:
+                    data = json.load(f)
+                    cls._tactics = {t["id"]: t for t in data["tactics"]}
+                    logger.info("tactics_loaded", count=len(cls._tactics))
+            except Exception as e:
+                logger.error("tactics_load_failed", error=str(e))
+                cls._tactics = {}
+        return cls._tactics
+
+    @classmethod
+    def get_tactic(cls, tactic_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        """Get a specific tactic by ID."""
+        if not tactic_id:
+            return None
+        tactics = cls.load_tactics()
+        return tactics.get(tactic_id)
 
 
 class RedTeamingAgent:
@@ -151,7 +181,8 @@ class RedTeamingAgent:
     async def generate_initial_prompt(
         self,
         harmful_query: str,
-        template_type: str = "random"
+        template_type: str = "random",
+        tactic_id: Optional[str] = None
     ) -> str:
         """
         Generate initial jailbreak prompt from harmful query.
@@ -161,14 +192,19 @@ class RedTeamingAgent:
         Args:
             harmful_query: The harmful/unsafe query to jailbreak
             template_type: Type of initial template (default, medical, technical, comparative, random)
+            tactic_id: Optional tactic ID to guide initial prompt generation
 
         Returns:
             Initial jailbreak prompt (P_init)
         """
+        # Load tactic if specified
+        tactic = TacticsLibrary.get_tactic(tactic_id) if tactic_id else None
+
         logger.info(
             "generating_initial_prompt",
             query_preview=harmful_query[:50] + "...",
-            template_type=template_type
+            template_type=template_type,
+            tactic=tactic["name"] if tactic else "none"
         )
 
         try:
@@ -229,32 +265,40 @@ class RedTeamingAgent:
         self,
         harmful_query: str,
         current_prompt: str,
-        available_principles: List[Dict[str, str]]
+        available_principles: List[Dict[str, str]],
+        tactic_id: Optional[str] = None
     ) -> List[str]:
         """
         Generate CoP strategy by selecting principles to compose.
-        
+
         Uses Template 2 from the CoP paper to select which principles
-        to apply for refinement.
-        
+        to apply for refinement. Optionally guided by a tactic.
+
         Args:
             harmful_query: Original harmful query
             current_prompt: Current jailbreak prompt
             available_principles: List of principle dicts with 'name' and 'description'
-            
+            tactic_id: Optional tactic ID to guide principle selection
+
         Returns:
             List of selected principle names (e.g., ["expand", "rephrase"])
         """
+        # Load tactic if specified
+        tactic = TacticsLibrary.get_tactic(tactic_id) if tactic_id else None
+
         logger.info(
             "generating_cop_strategy",
-            num_principles_available=len(available_principles)
+            num_principles_available=len(available_principles),
+            tactic=tactic["name"] if tactic else "none"
         )
-        
+
         try:
             # FIXED: Pass goal and action_list to composition_of_principles()
+            # NEW: Also pass tactic for strategic guidance
             full_prompt = PromptTemplates.composition_of_principles(
                 goal=harmful_query,
-                action_list=available_principles
+                action_list=available_principles,
+                tactic=tactic
             )
             
             messages = [
@@ -341,7 +385,8 @@ class RedTeamingAgent:
         selected_principles: List[str],
         current_similarity: float = None,
         target_similarity_min: float = 6.0,
-        target_similarity_max: float = 7.5
+        target_similarity_max: float = 7.5,
+        tactic_id: Optional[str] = None
     ) -> str:
         """
         Refine the jailbreak prompt using selected principles.
@@ -356,14 +401,19 @@ class RedTeamingAgent:
             current_similarity: Current similarity score (1-10)
             target_similarity_min: Target minimum similarity
             target_similarity_max: Target maximum similarity
+            tactic_id: Optional tactic ID to guide refinement
 
         Returns:
             Refined jailbreak prompt (P_cop)
         """
+        # Load tactic if specified
+        tactic = TacticsLibrary.get_tactic(tactic_id) if tactic_id else None
+
         logger.info(
             "refining_prompt",
             principles=selected_principles,
-            current_similarity=current_similarity
+            current_similarity=current_similarity,
+            tactic=tactic["name"] if tactic else "none"
         )
 
         try:

@@ -8,7 +8,7 @@ FIXED: Changed model_name to model for RedTeamingAgent and JudgeLLM
 
 import asyncio
 import structlog
-from typing import List
+from typing import List, Optional
 import uuid
 from datetime import datetime
 
@@ -109,7 +109,8 @@ class CoPPipeline:
         target_model: str,
         max_iterations: int = None,
         enable_detailed_tracing: bool = False,
-        traces_output_dir: str = "./traces"
+        traces_output_dir: str = "./traces",
+        tactic_id: Optional[str] = None
     ) -> AttackMetrics:
         """
         Execute CoP attack on a single query.
@@ -120,6 +121,7 @@ class CoPPipeline:
             max_iterations: Max iterations (default from settings)
             enable_detailed_tracing: If True, creates detailed trace logs (JSON + Markdown)
             traces_output_dir: Directory to save trace files
+            tactic_id: Optional tactic ID to guide CoP principle composition
 
         Returns:
             AttackMetrics with results (trace_files dict added if tracing enabled)
@@ -177,7 +179,7 @@ class CoPPipeline:
             )
 
             # Execute attack
-            result = await workflow.execute(query, target_model)
+            result = await workflow.execute(query, target_model, tactic_id=tactic_id)
             
             # Create metrics
             duration = (datetime.utcnow() - start_time).total_seconds()
