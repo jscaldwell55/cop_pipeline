@@ -325,15 +325,22 @@ class CoPWorkflow:
             query_id=state["query_id"],
             principles=state["current_principles"]
         )
-        
+
         # Determine base prompt (best or initial)
         base_prompt = state["best_prompt"] if state.get("best_score", 0) > 0 else state["initial_prompt"]
 
+        # Get current similarity if available from previous iteration
+        current_similarity = state.get("current_similarity_score")
+
         # FIXED: Use correct method name - refine_prompt
+        # NEW: Pass similarity score for targeting
         refined_prompt = await self.red_teaming_agent.refine_prompt(
             harmful_query=state["original_query"],
             current_prompt=base_prompt,
-            selected_principles=state["current_principles"]
+            selected_principles=state["current_principles"],
+            current_similarity=current_similarity,
+            target_similarity_min=6.0,
+            target_similarity_max=7.5
         )
         
         if not refined_prompt:

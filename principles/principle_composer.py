@@ -233,6 +233,8 @@ class ProgressiveAttackStrategy:
     - Iterations 4-6: Medium aggression (obfuscation, phrase_insertion, expand)
     - Iterations 7-9: Aggressive (prompt_injection, empathy_backfire, generate)
     - Iteration 10+: Nuclear option (all high-effectiveness techniques)
+
+    ENHANCED: Now tracks failed compositions to avoid repetition.
     """
 
     def __init__(self, library: PrincipleLibrary):
@@ -240,9 +242,38 @@ class ProgressiveAttackStrategy:
         self.logger = structlog.get_logger()
 
         # Define principle tiers by aggression level
-        self.subtle_principles = ["rephrase", "style_change", "shorten", "replace_word"]
-        self.medium_principles = ["phrase_insertion", "expand", "obfuscation"]
-        self.aggressive_principles = ["prompt_injection", "empathy_backfire", "generate"]
+        self.subtle_principles = ["rephrase", "style_change", "shorten", "replace_word", "hypothetical_framing"]
+        self.medium_principles = ["phrase_insertion", "expand", "obfuscation", "technical_jargon", "context_switching", "fragmentation"]
+        self.aggressive_principles = ["prompt_injection", "empathy_backfire", "generate", "authority_endorsement"]
+
+        # NEW: Track failed compositions to avoid repetition
+        self.failed_compositions: Set[str] = set()
+
+    def record_failure(self, composition: str):
+        """
+        Record a failed composition to avoid trying it again.
+
+        Args:
+            composition: Composition string like "expand ⊕ phrase_insertion"
+        """
+        # Normalize composition (sort principles to catch reorderings)
+        principles = sorted([p.strip() for p in composition.replace("⊕", " ").split()])
+        normalized = " ⊕ ".join(principles)
+        self.failed_compositions.add(normalized)
+        self.logger.info("recorded_failed_composition", composition=normalized)
+
+    def is_failed_composition(self, principles: List[str]) -> bool:
+        """
+        Check if this principle combination has failed before.
+
+        Args:
+            principles: List of principle names
+
+        Returns:
+            True if this composition has failed before
+        """
+        normalized = " ⊕ ".join(sorted(principles))
+        return normalized in self.failed_compositions
 
     def get_principles_for_iteration(
         self,
@@ -296,19 +327,34 @@ class ProgressiveAttackStrategy:
 
         # Prefer unused principles, but allow reuse if necessary
         unused = [p for p in available if p not in used_principles]
-        if len(unused) >= num_principles:
-            selected = random.sample(unused, num_principles)
-        else:
-            # Not enough unused principles, sample from all available
-            selected = random.sample(available, min(num_principles, len(available)))
 
-        self.logger.info(
-            "principles_selected",
+        # NEW: Try multiple combinations to avoid failed compositions
+        max_attempts = 20
+        for attempt in range(max_attempts):
+            if len(unused) >= num_principles:
+                selected = random.sample(unused, num_principles)
+            else:
+                # Not enough unused principles, sample from all available
+                selected = random.sample(available, min(num_principles, len(available)))
+
+            # Check if this combination has failed before
+            if not self.is_failed_composition(selected):
+                self.logger.info(
+                    "principles_selected",
+                    iteration=iteration,
+                    selected=selected,
+                    avoided=list(used_principles),
+                    attempt=attempt + 1
+                )
+                return selected
+
+        # If all combinations have failed, return anyway but log warning
+        self.logger.warning(
+            "all_combinations_tried",
             iteration=iteration,
             selected=selected,
-            avoided=list(used_principles)
+            message="Returning composition despite previous failure"
         )
-
         return selected
 
 

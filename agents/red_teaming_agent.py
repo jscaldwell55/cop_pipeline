@@ -338,33 +338,44 @@ class RedTeamingAgent:
         self,
         harmful_query: str,
         current_prompt: str,
-        selected_principles: List[str]
+        selected_principles: List[str],
+        current_similarity: float = None,
+        target_similarity_min: float = 6.0,
+        target_similarity_max: float = 7.5
     ) -> str:
         """
         Refine the jailbreak prompt using selected principles.
-        
+
         Uses Template 3 from the CoP paper to apply the selected
         principles to the current prompt.
-        
+
         Args:
             harmful_query: Original harmful query
             current_prompt: Current jailbreak prompt
             selected_principles: List of principle names to apply
-            
+            current_similarity: Current similarity score (1-10)
+            target_similarity_min: Target minimum similarity
+            target_similarity_max: Target maximum similarity
+
         Returns:
             Refined jailbreak prompt (P_cop)
         """
         logger.info(
             "refining_prompt",
-            principles=selected_principles
+            principles=selected_principles,
+            current_similarity=current_similarity
         )
-        
+
         try:
             # FIXED: Pass goal, current_prompt, and actions_list to refinement()
+            # NEW: Also pass similarity parameters for targeting
             full_prompt = PromptTemplates.refinement(
                 goal=harmful_query,
                 current_prompt=current_prompt,
-                actions_list=selected_principles
+                actions_list=selected_principles,
+                current_similarity=current_similarity,
+                target_similarity_min=target_similarity_min,
+                target_similarity_max=target_similarity_max
             )
             
             messages = [
