@@ -16,29 +16,61 @@ logger = structlog.get_logger()
 def fix_json_string(text: str) -> str:
     """
     Fix common JSON issues from LLM responses.
-    
-    Replaces literal control characters (newlines, tabs) with escaped versions.
+
+    FIXED: Only escapes literal control characters when INSIDE JSON string values.
+    Preserves structural whitespace outside strings.
+
     This is needed when LLMs don't properly escape special characters in JSON values.
     """
-    fixed = text
-    # Handle already-escaped newlines first
-    fixed = fixed.replace('\\n', '<<<ESCAPED_NEWLINE>>>')
-    fixed = fixed.replace('\\r', '<<<ESCAPED_RETURN>>>')
-    fixed = fixed.replace('\\t', '<<<ESCAPED_TAB>>>')
-    
-    # Fix literal control characters
-    fixed = fixed.replace('\n', '\\n')
-    fixed = fixed.replace('\r', '\\r')
-    fixed = fixed.replace('\t', '\\t')
-    fixed = fixed.replace('\b', '\\b')
-    fixed = fixed.replace('\f', '\\f')
-    
-    # Restore already-escaped characters
-    fixed = fixed.replace('<<<ESCAPED_NEWLINE>>>', '\\n')
-    fixed = fixed.replace('<<<ESCAPED_RETURN>>>', '\\r')
-    fixed = fixed.replace('<<<ESCAPED_TAB>>>', '\\t')
-    
-    return fixed
+    result = []
+    in_string = False
+    escape_next = False
+
+    i = 0
+    while i < len(text):
+        char = text[i]
+
+        # Handle escape sequences
+        if escape_next:
+            result.append(char)
+            escape_next = False
+            i += 1
+            continue
+
+        if char == '\\':
+            result.append(char)
+            escape_next = True
+            i += 1
+            continue
+
+        # Track string boundaries
+        if char == '"':
+            in_string = not in_string
+            result.append(char)
+            i += 1
+            continue
+
+        # Only escape control characters when INSIDE strings
+        if in_string:
+            if char == '\n':
+                result.append('\\n')
+            elif char == '\r':
+                result.append('\\r')
+            elif char == '\t':
+                result.append('\\t')
+            elif char == '\b':
+                result.append('\\b')
+            elif char == '\f':
+                result.append('\\f')
+            else:
+                result.append(char)
+        else:
+            # Outside strings: keep whitespace as-is (it's structural)
+            result.append(char)
+
+        i += 1
+
+    return ''.join(result)
 
 
 def extract_largest_valid_json(response: str) -> Optional[Dict[str, Any]]:

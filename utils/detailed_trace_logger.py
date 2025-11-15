@@ -402,12 +402,35 @@ class DetailedTraceLogger:
 
         filepath = self.output_dir / filename
 
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(self._generate_markdown())
+        try:
+            markdown_content = self._generate_markdown()
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(markdown_content)
 
-        self.logger.debug("trace_saved_markdown", filepath=str(filepath))
+            self.logger.info(
+                "trace_saved_markdown",
+                filepath=str(filepath),
+                file_size=len(markdown_content),
+                exists_after_save=filepath.exists()
+            )
 
-        return filepath
+            # Verify file was written
+            if not filepath.exists():
+                self.logger.error(
+                    "markdown_file_not_found_after_save",
+                    filepath=str(filepath)
+                )
+                raise IOError(f"Markdown file not found after save: {filepath}")
+
+            return filepath
+
+        except Exception as e:
+            self.logger.error(
+                "markdown_save_failed",
+                filepath=str(filepath),
+                error=str(e)
+            )
+            raise
 
     def _generate_markdown(self) -> str:
         """Generate markdown formatted trace."""
@@ -490,14 +513,44 @@ class DetailedTraceLogger:
 
     def save(self):
         """Save both JSON and Markdown versions."""
-        json_path = self.save_json()
-        md_path = self.save_markdown()
+        try:
+            json_path = self.save_json()
+            self.logger.info(
+                "json_trace_saved",
+                query_id=self.query_id,
+                json_path=str(json_path),
+                json_exists=json_path.exists()
+            )
+        except Exception as e:
+            self.logger.error(
+                "json_save_failed",
+                query_id=self.query_id,
+                error=str(e)
+            )
+            raise
+
+        try:
+            md_path = self.save_markdown()
+            self.logger.info(
+                "markdown_trace_saved",
+                query_id=self.query_id,
+                markdown_path=str(md_path),
+                markdown_exists=md_path.exists()
+            )
+        except Exception as e:
+            self.logger.error(
+                "markdown_save_failed",
+                query_id=self.query_id,
+                error=str(e)
+            )
+            raise
 
         self.logger.info(
-            "trace_saved",
+            "trace_saved_complete",
             query_id=self.query_id,
             json_path=str(json_path),
-            markdown_path=str(md_path)
+            markdown_path=str(md_path),
+            both_exist=json_path.exists() and md_path.exists()
         )
 
         return {

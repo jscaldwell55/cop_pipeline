@@ -87,12 +87,14 @@ class CoPWebUI:
                 self.pipeline.judge_llm.model_mapping.get(judge_llm, judge_llm)
 
             # Run attack - if database is enabled, this saves to DB
+            # Use absolute path for traces to ensure Gradio can serve them for download
+            traces_dir = os.path.abspath("./traces")
             result = await self.pipeline.attack_single(
                 query=query,
                 target_model=target_model,
                 max_iterations=max_iterations,
                 enable_detailed_tracing=enable_detailed_tracing,
-                traces_output_dir="./traces"
+                traces_output_dir=traces_dir
             )
 
             # Format results
@@ -107,8 +109,8 @@ class CoPWebUI:
             json_file = None
             md_file = None
             if enable_detailed_tracing and hasattr(result, 'trace_files'):
-                trace_links_html = self._format_trace_links(result.trace_files)
                 json_file, md_file = self.get_trace_files_for_download(result.trace_files)
+                trace_links_html = self._format_trace_links(result.trace_files, json_file, md_file)
 
             return status_html, results_json, history_html, trace_links_html, json_file, md_file
 
@@ -257,12 +259,51 @@ class CoPWebUI:
         json_path = trace_files.get("json", "") if trace_files else ""
         md_path = trace_files.get("markdown", "") if trace_files else ""
 
-        # Return paths, or None if files don't exist
-        return (json_path if json_path and os.path.exists(json_path) else None,
-                md_path if md_path and os.path.exists(md_path) else None)
+        # Convert to absolute paths if they're not already
+        if json_path:
+            json_path = os.path.abspath(json_path)
+        if md_path:
+            md_path = os.path.abspath(md_path)
 
-    def _format_trace_links(self, trace_files: dict) -> str:
-        """Format trace file links as HTML."""
+        # Debug logging
+        print(f"\n{'='*60}")
+        print(f"[TRACE DEBUG] File Download Preparation")
+        print(f"{'='*60}")
+        print(f"JSON path: {json_path}")
+        print(f"  - Is absolute: {os.path.isabs(json_path) if json_path else 'N/A'}")
+        print(f"  - Exists: {os.path.exists(json_path) if json_path else False}")
+        if json_path and os.path.exists(json_path):
+            print(f"  - Size: {os.path.getsize(json_path)} bytes")
+
+        print(f"\nMarkdown path: {md_path}")
+        print(f"  - Is absolute: {os.path.isabs(md_path) if md_path else 'N/A'}")
+        print(f"  - Exists: {os.path.exists(md_path) if md_path else False}")
+        if md_path and os.path.exists(md_path):
+            print(f"  - Size: {os.path.getsize(md_path)} bytes")
+
+        # List files in directory for debugging
+        if json_path:
+            trace_dir = os.path.dirname(json_path)
+            if os.path.exists(trace_dir):
+                print(f"\nFiles in trace directory ({trace_dir}):")
+                for f in os.listdir(trace_dir):
+                    fpath = os.path.join(trace_dir, f)
+                    size = os.path.getsize(fpath)
+                    print(f"  - {f} ({size} bytes)")
+
+        # Return paths, or None if files don't exist
+        json_result = json_path if json_path and os.path.exists(json_path) else None
+        md_result = md_path if md_path and os.path.exists(md_path) else None
+
+        print(f"\nReturning to Gradio:")
+        print(f"  - JSON: {json_result}")
+        print(f"  - Markdown: {md_result}")
+        print(f"{'='*60}\n")
+
+        return (json_result, md_result)
+
+    def _format_trace_links(self, trace_files: dict, json_file_path: Optional[str], md_file_path: Optional[str]) -> str:
+        """Format trace file links as HTML with availability status."""
         import os
 
         json_path = trace_files.get("json", "")
@@ -272,20 +313,39 @@ class CoPWebUI:
         json_file = os.path.basename(json_path) if json_path else ""
         md_file = os.path.basename(md_path) if md_path else ""
 
+        # Check availability
+        json_available = json_file_path is not None
+        md_available = md_file_path is not None
+
+        # Status indicators
+        json_status = "✅ Available" if json_available else "⚠️ Not available"
+        md_status = "✅ Available" if md_available else "⚠️ Not available"
+
+        warning_message = ""
+        if not json_available or not md_available:
+            warning_message = """
+            <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 10px; border-radius: 5px; margin-top: 10px;">
+                <p style="margin: 0; color: #856404;">
+                    ⚠️ <strong>Warning:</strong> Some trace files could not be found. Check server logs for details.
+                </p>
+            </div>
+            """
+
         return f"""
         <div style="background: #e3f2fd; border: 2px solid #2196f3; padding: 15px; border-radius: 10px; margin-top: 15px;">
             <h3 style="color: #2196f3; margin-top: 0;">📊 Detailed Trace Logs Generated</h3>
             <p>Complete prompt/response trace saved to:</p>
             <ul style="list-style: none; padding-left: 0;">
                 <li style="margin: 10px 0;">
-                    <strong>📄 JSON:</strong> <code>{json_file}</code>
+                    <strong>📄 JSON:</strong> <code>{json_file}</code> - {json_status}
                 </li>
                 <li style="margin: 10px 0;">
-                    <strong>📝 Markdown:</strong> <code>{md_file}</code>
+                    <strong>📝 Markdown:</strong> <code>{md_file}</code> - {md_status}
                 </li>
             </ul>
+            {warning_message}
             <p style="margin-top: 15px; font-size: 14px; color: #666;">
-                💡 <strong>Tip:</strong> Use the download buttons below to retrieve the trace files.
+                💡 <strong>Tip:</strong> Use the download buttons below to retrieve the available trace files.
             </p>
         </div>
         """
@@ -551,12 +611,14 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                             trace_json_download = gr.File(
                                 label="📄 Download JSON Trace",
                                 visible=True,
-                                interactive=False
+                                interactive=False,
+                                type="filepath"
                             )
                             trace_md_download = gr.File(
                                 label="📝 Download Markdown Trace",
                                 visible=True,
-                                interactive=False
+                                interactive=False,
+                                type="filepath"
                             )
 
                         with gr.Accordion("📄 Full Results (JSON)", open=False):
