@@ -66,15 +66,15 @@ class CoPWebUI:
         judge_llm: str,
         max_iterations: int,
         enable_detailed_tracing: bool = False
-    ) -> tuple[str, str, str, str]:
+    ) -> tuple[str, str, str, str, str, str]:
         """
         Run single attack and return formatted results
 
         Returns:
-            (status_html, results_json, history_html, trace_links_html)
+            (status_html, results_json, history_html, trace_links_html, json_file, md_file)
         """
         if not query.strip():
-            return ("⚠️ Please enter a query", "{}", "", "")
+            return ("⚠️ Please enter a query", "{}", "", "", None, None)
 
         try:
             # Update pipeline models
@@ -102,12 +102,15 @@ class CoPWebUI:
             # Get history on same loop (no session passed since attack_single handles DB internally)
             history_html = await self.get_attack_history(target_model)
 
-            # Format trace links if detailed tracing was enabled
+            # Format trace links and prepare downloads if detailed tracing was enabled
             trace_links_html = ""
+            json_file = None
+            md_file = None
             if enable_detailed_tracing and hasattr(result, 'trace_files'):
                 trace_links_html = self._format_trace_links(result.trace_files)
+                json_file, md_file = self.get_trace_files_for_download(result.trace_files)
 
-            return status_html, results_json, history_html, trace_links_html
+            return status_html, results_json, history_html, trace_links_html, json_file, md_file
 
         except Exception as e:
             import traceback
@@ -122,7 +125,7 @@ class CoPWebUI:
                 </details>
             </div>
             """
-            return error_html, json.dumps({"error": str(e)}), "", ""
+            return error_html, json.dumps({"error": str(e)}), "", "", None, None
     
     async def run_batch_campaign(
         self,
@@ -244,6 +247,20 @@ class CoPWebUI:
     # FORMATTING METHODS (synchronous, no changes needed)
     # =========================================================================
 
+    def get_trace_files_for_download(self, trace_files: dict) -> tuple[str, str]:
+        """
+        Get trace file paths for download.
+
+        Returns:
+            (json_path, markdown_path) - Absolute paths to trace files
+        """
+        json_path = trace_files.get("json", "") if trace_files else ""
+        md_path = trace_files.get("markdown", "") if trace_files else ""
+
+        # Return paths, or None if files don't exist
+        return (json_path if json_path and os.path.exists(json_path) else None,
+                md_path if md_path and os.path.exists(md_path) else None)
+
     def _format_trace_links(self, trace_files: dict) -> str:
         """Format trace file links as HTML."""
         import os
@@ -261,15 +278,14 @@ class CoPWebUI:
             <p>Complete prompt/response trace saved to:</p>
             <ul style="list-style: none; padding-left: 0;">
                 <li style="margin: 10px 0;">
-                    <strong>📄 JSON:</strong> <code>{json_path}</code>
+                    <strong>📄 JSON:</strong> <code>{json_file}</code>
                 </li>
                 <li style="margin: 10px 0;">
-                    <strong>📝 Markdown:</strong> <code>{md_path}</code>
+                    <strong>📝 Markdown:</strong> <code>{md_file}</code>
                 </li>
             </ul>
             <p style="margin-top: 15px; font-size: 14px; color: #666;">
-                💡 <strong>Tip:</strong> Trace files contain every prompt/response pair during the attack,
-                including initial generation, CoP strategy selection, refinements, target queries, and evaluations.
+                💡 <strong>Tip:</strong> Use the download buttons below to retrieve the trace files.
             </p>
         </div>
         """
@@ -530,6 +546,19 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
 
                         trace_links_output = gr.HTML(label="Detailed Trace Files")
 
+                        # Download buttons for trace files
+                        with gr.Row():
+                            trace_json_download = gr.File(
+                                label="📄 Download JSON Trace",
+                                visible=True,
+                                interactive=False
+                            )
+                            trace_md_download = gr.File(
+                                label="📝 Download Markdown Trace",
+                                visible=True,
+                                interactive=False
+                            )
+
                         with gr.Accordion("📄 Full Results (JSON)", open=False):
                             results_json = gr.Code(language="json", label="")
 
@@ -540,7 +569,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 attack_btn.click(
                     fn=ui.run_single_attack,
                     inputs=[query_input, target_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
-                    outputs=[status_output, results_json, history_output, trace_links_output]
+                    outputs=[status_output, results_json, history_output, trace_links_output, trace_json_download, trace_md_download]
                 )
             
             # Tab 2: Batch Campaign
@@ -672,6 +701,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 **Outputs:**
                 - **JSON file**: Machine-readable complete trace with all metadata
                 - **Markdown file**: Human-readable formatted trace for analysis
+                - **Download buttons**: Click to download trace files from Render or local server
 
                 **Use Cases:**
                 - Debugging why an attack succeeded/failed
@@ -679,6 +709,8 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 - Academic research and documentation
                 - Training and education
                 - Reproducing attack results
+
+                **💡 Tip for Render:** After running tests, use the download buttons to retrieve your trace files before the container restarts.
                 
                 ### Understanding Results
                 - **Jailbreak Score**: 1-10 rating (higher = more successful)
