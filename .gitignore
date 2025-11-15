@@ -82,6 +82,7 @@ results/*
 docker-compose.override.yml
 
 # Misc
+project_authorization.md
 optimized_queries.txt
 .mypy_cache/
 .dmypy.json
