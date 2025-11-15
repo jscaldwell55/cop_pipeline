@@ -224,40 +224,147 @@ class PrincipleComposer:
         }
 
 
+class ProgressiveAttackStrategy:
+    """
+    NEW: Implements progressive attack escalation based on iteration number.
+
+    Strategy:
+    - Iterations 1-3: Subtle transformations (rephrase, style_change, shorten)
+    - Iterations 4-6: Medium aggression (obfuscation, phrase_insertion, expand)
+    - Iterations 7-9: Aggressive (prompt_injection, empathy_backfire, generate)
+    - Iteration 10+: Nuclear option (all high-effectiveness techniques)
+    """
+
+    def __init__(self, library: PrincipleLibrary):
+        self.library = library
+        self.logger = structlog.get_logger()
+
+        # Define principle tiers by aggression level
+        self.subtle_principles = ["rephrase", "style_change", "shorten", "replace_word"]
+        self.medium_principles = ["phrase_insertion", "expand", "obfuscation"]
+        self.aggressive_principles = ["prompt_injection", "empathy_backfire", "generate"]
+
+    def get_principles_for_iteration(
+        self,
+        iteration: int,
+        previous_compositions: List[str] = None
+    ) -> List[str]:
+        """
+        Select principles based on iteration number with progressive escalation.
+
+        Args:
+            iteration: Current iteration number (1-indexed)
+            previous_compositions: List of previously used composition strings
+
+        Returns:
+            List of 2-3 principle names to compose
+        """
+        import random
+
+        # Track which principles were used recently to avoid repetition
+        used_principles = set()
+        if previous_compositions:
+            for comp in previous_compositions[-3:]:  # Last 3 iterations
+                # Parse composition string like "expand ⊕ phrase_insertion"
+                principles = [p.strip() for p in comp.replace("⊕", " ").split()]
+                used_principles.update(principles)
+
+        # Select principle pool based on iteration
+        if iteration <= 3:
+            # Subtle phase
+            pool = self.subtle_principles
+            num_principles = 2
+            self.logger.info("progressive_strategy", phase="subtle", iteration=iteration)
+        elif iteration <= 6:
+            # Medium phase - combine subtle + medium
+            pool = self.subtle_principles + self.medium_principles
+            num_principles = 3
+            self.logger.info("progressive_strategy", phase="medium", iteration=iteration)
+        elif iteration <= 9:
+            # Aggressive phase - medium + aggressive
+            pool = self.medium_principles + self.aggressive_principles
+            num_principles = 3
+            self.logger.info("progressive_strategy", phase="aggressive", iteration=iteration)
+        else:
+            # Nuclear phase - all principles available
+            pool = self.library.get_principle_names()
+            num_principles = 3
+            self.logger.info("progressive_strategy", phase="nuclear", iteration=iteration)
+
+        # Filter out recently used principles to encourage diversity
+        available = [p for p in pool if p in self.library.get_principle_names()]
+
+        # Prefer unused principles, but allow reuse if necessary
+        unused = [p for p in available if p not in used_principles]
+        if len(unused) >= num_principles:
+            selected = random.sample(unused, num_principles)
+        else:
+            # Not enough unused principles, sample from all available
+            selected = random.sample(available, min(num_principles, len(available)))
+
+        self.logger.info(
+            "principles_selected",
+            iteration=iteration,
+            selected=selected,
+            avoided=list(used_principles)
+        )
+
+        return selected
+
+
 class PrincipleSelector:
     """
     Intelligent selection of principles based on context.
     Can be extended with ML-based selection in the future.
     """
-    
+
     def __init__(self, library: PrincipleLibrary):
         self.library = library
         self.usage_stats: Dict[str, Dict[str, int]] = {}
-    
+        # NEW: Add progressive strategy
+        self.progressive_strategy = ProgressiveAttackStrategy(library)
+
     def select_promising_principles(
         self,
         query: str,
-        previous_attempts: List[str] = None
+        previous_attempts: List[str] = None,
+        iteration: int = 1,
+        use_progressive: bool = True
     ) -> List[str]:
         """
         Select promising principles based on query and history.
-        Currently returns most effective from metadata.
-        Can be enhanced with context-aware selection.
+
+        Args:
+            query: The harmful query being jailbroken
+            previous_attempts: List of previously used composition strings
+            iteration: Current iteration number (for progressive strategy)
+            use_progressive: If True, use progressive escalation strategy
+
+        Returns:
+            List of principle names to compose
         """
+        # NEW: Use progressive strategy if enabled
+        if use_progressive:
+            return self.progressive_strategy.get_principles_for_iteration(
+                iteration=iteration,
+                previous_compositions=previous_attempts
+            )
+
+        # Fallback to original logic
         most_effective = self.library.get_most_effective()
-        
+
         # Filter out previously attempted compositions
         if previous_attempts:
             # Simplified - in production, implement smarter filtering
             pass
-        
+
         return most_effective[:3]  # Return top 3
-    
+
     def update_stats(self, principle: str, success: bool):
         """Update usage statistics for a principle."""
         if principle not in self.usage_stats:
             self.usage_stats[principle] = {"success": 0, "total": 0}
-        
+
         self.usage_stats[principle]["total"] += 1
         if success:
             self.usage_stats[principle]["success"] += 1

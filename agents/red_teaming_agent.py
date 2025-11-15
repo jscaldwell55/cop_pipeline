@@ -148,27 +148,35 @@ class RedTeamingAgent:
             )
             raise
     
-    async def generate_initial_prompt(self, harmful_query: str) -> str:
+    async def generate_initial_prompt(
+        self,
+        harmful_query: str,
+        template_type: str = "random"
+    ) -> str:
         """
         Generate initial jailbreak prompt from harmful query.
-        
+
         Uses Template 1 from the CoP paper to create P_init.
-        
+
         Args:
             harmful_query: The harmful/unsafe query to jailbreak
-            
+            template_type: Type of initial template (default, medical, technical, comparative, random)
+
         Returns:
             Initial jailbreak prompt (P_init)
         """
         logger.info(
             "generating_initial_prompt",
-            query_preview=harmful_query[:50] + "..."
+            query_preview=harmful_query[:50] + "...",
+            template_type=template_type
         )
-        
+
         try:
-            # FIXED: Pass goal parameter to initial_seed_generation()
-            # The template expects the goal and returns the full prompt
-            full_prompt = PromptTemplates.initial_seed_generation(goal=harmful_query)
+            # NEW: Support multiple template types for diverse initial prompts
+            full_prompt = PromptTemplates.initial_seed_generation(
+                goal=harmful_query,
+                template_type=template_type
+            )
             
             # The template returns a system prompt, we need to call the LLM with it
             messages = [
