@@ -91,19 +91,34 @@ class JudgeLLM:
         self.strict_mode = strict_mode
         self.logger = structlog.get_logger()
         
-        # Map to LiteLLM format
+        # Map to LiteLLM format with fallback models
+        # Using model names without specific dates to always get latest version
         self.model_mapping = {
             "gpt-4": "gpt-4",
             "gpt-4o": "gpt-4o",
             "gpt-4o-mini": "gpt-4o-mini",
             "gpt-4-turbo": "gpt-4-turbo",
-            "claude-3.5-sonnet": "anthropic/claude-3-5-sonnet-20241022"
+            # Updated: Use latest model name (Nov 2025)
+            "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
+            "claude-3-opus": "claude-3-opus-20240229",
+            "claude-3-sonnet": "claude-3-sonnet-20240229"
         }
-        
+
+        # Define fallback models for each primary model
+        self.fallback_mapping = {
+            "claude-3-5-sonnet-20241022": ["claude-3-5-sonnet-20240620", "gpt-4o"],
+            "claude-3-opus-20240229": ["claude-3-sonnet-20240229", "gpt-4o"],
+            "gpt-4o": ["gpt-4o-mini", "claude-3-5-sonnet-20241022"],
+            "gpt-4": ["gpt-4o", "gpt-4o-mini"]
+        }
+
         self.litellm_model = self.model_mapping.get(
             self.model_name,
             self.model_name
         )
+
+        # Get fallback models for this model
+        self.fallback_models = self.fallback_mapping.get(self.litellm_model, ["gpt-4o-mini"])
         
         self.logger.info(
             "judge_llm_initialized",
@@ -219,39 +234,112 @@ class JudgeLLM:
         
         return None
     
+    async def _evaluate_with_fallback(self, prompt: str, model: str) -> str:
+        """
+        Evaluate with a specific model (helper for fallback logic).
+        Does NOT retry - caller handles retries.
+        """
+        response = await acompletion(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=self.temperature,
+            max_tokens=500
+        )
+
+        content = response.choices[0].message.content
+
+        # Log query for metrics
+        from utils.logging_metrics import get_metrics_logger
+        metrics_logger = get_metrics_logger()
+        metrics_logger.log_query(
+            model_type="judge_llm",
+            model_name=model
+        )
+
+        return content
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10)
     )
     async def _evaluate(self, prompt: str) -> str:
-        """Internal method to get evaluation from judge LLM."""
+        """
+        Internal method to get evaluation from judge LLM with intelligent fallback.
+
+        Handles NotFoundError by automatically trying fallback models.
+        This prevents the RuntimeError cascade when a model is deprecated/unavailable.
+        """
+        # Try primary model first
         try:
-            response = await acompletion(
-                model=self.litellm_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature,
-                max_tokens=500
-            )
-            
-            content = response.choices[0].message.content
-            
-            # Log query for metrics
-            from utils.logging_metrics import get_metrics_logger
-            metrics_logger = get_metrics_logger()
-            metrics_logger.log_query(
-                model_type="judge_llm",
-                model_name=self.model_name
-            )
-            
-            return content
-        
+            return await self._evaluate_with_fallback(prompt, self.litellm_model)
+
         except Exception as e:
-            self.logger.error(
-                "evaluation_failed",
-                model=self.model_name,
-                error=str(e)
+            error_type = type(e).__name__
+            error_msg = str(e).lower()
+
+            # Check if this is a NotFoundError (model not available)
+            is_not_found = (
+                "notfounderror" in error_type.lower() or
+                "not_found_error" in error_msg or
+                "model not found" in error_msg or
+                "model_not_found" in error_msg or
+                "does not exist" in error_msg
             )
-            raise
+
+            if is_not_found and self.fallback_models:
+                self.logger.warning(
+                    "primary_model_not_found_trying_fallbacks",
+                    primary_model=self.litellm_model,
+                    error=str(e),
+                    fallback_models=self.fallback_models
+                )
+
+                # Try each fallback model in sequence
+                for fallback_model in self.fallback_models:
+                    try:
+                        self.logger.info(
+                            "trying_fallback_model",
+                            fallback_model=fallback_model
+                        )
+
+                        result = await self._evaluate_with_fallback(prompt, fallback_model)
+
+                        self.logger.info(
+                            "fallback_model_succeeded",
+                            fallback_model=fallback_model,
+                            original_model=self.litellm_model
+                        )
+
+                        return result
+
+                    except Exception as fallback_error:
+                        self.logger.warning(
+                            "fallback_model_failed",
+                            fallback_model=fallback_model,
+                            error=str(fallback_error)
+                        )
+                        continue
+
+                # All fallbacks failed
+                self.logger.error(
+                    "all_fallback_models_failed",
+                    primary_model=self.litellm_model,
+                    fallback_models=self.fallback_models,
+                    original_error=str(e)
+                )
+                raise Exception(
+                    f"Primary model {self.litellm_model} not found and all fallbacks failed. "
+                    f"Original error: {str(e)}"
+                )
+            else:
+                # Not a NotFoundError, or no fallbacks available
+                self.logger.error(
+                    "evaluation_failed",
+                    model=self.model_name,
+                    error=str(e),
+                    error_type=error_type
+                )
+                raise
     
     async def evaluate_jailbreak(
         self,

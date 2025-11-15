@@ -51,27 +51,31 @@ class LiteLLMTarget(TargetLLM):
         self.max_tokens = max_tokens
         
         # Model mapping to LiteLLM format
+        # Updated Nov 2025: Using latest model versions
         self.model_mapping = {
             # OpenAI
             "gpt-5.1": "gpt-5.1",
             "gpt-4": "gpt-4",
             "gpt-4o": "gpt-4o",
             "gpt-4-turbo": "gpt-4-turbo",
+            "gpt-4o-mini": "gpt-4o-mini",
             "o1": "o1",
             "o1-mini": "o1-mini",
 
-            # Anthropic
-            "claude-3.5-sonnet": "anthropic/claude-3-5-sonnet-20241022",
-            "claude-3-opus": "anthropic/claude-3-opus-20240229",
-            
+            # Anthropic - Updated to use latest model naming
+            # NOTE: LiteLLM automatically adds "anthropic/" prefix for these models
+            "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
+            "claude-3-opus": "claude-3-opus-20240229",
+            "claude-3-sonnet": "claude-3-sonnet-20240229",
+
             # Google
             "gemini-pro-1.5": "gemini/gemini-1.5-pro",
             "gemini-flash": "gemini/gemini-1.5-flash",
-            
+
             # Meta Llama (via Together AI or Replicate)
             "llama-3-8b-instruct": "together_ai/meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
             "llama-3-70b-instruct": "together_ai/meta-llama/Meta-Llama-3-70B-Instruct-Turbo",
-            
+
             # Google Gemma
             "gemma-7b-it": "together_ai/google/gemma-7b-it"
         }

@@ -30,9 +30,87 @@ from config.settings import get_settings
 settings = get_settings()
 
 
+def gradio_error_handler(func):
+    """
+    Decorator to catch ALL exceptions in Gradio handlers before response starts.
+    This prevents "RuntimeError: Caught handled exception, but response already started"
+
+    The decorator ensures exceptions are caught and formatted as error responses
+    BEFORE Gradio starts sending the HTTP response.
+    """
+    import functools
+    import traceback
+
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            # Catch ANY exception and format as error response
+            error_detail = traceback.format_exc()
+            error_html = f"""
+            <div style="background: #fee; border: 1px solid #c00; padding: 15px; border-radius: 5px;">
+                <h3 style="color: #c00;">❌ Error in {func.__name__}</h3>
+                <p><strong>Error:</strong> {str(e)}</p>
+                <details>
+                    <summary>Stack Trace</summary>
+                    <pre style="font-size: 10px;">{error_detail}</pre>
+                </details>
+            </div>
+            """
+
+            # Log the error server-side
+            print(f"\n{'='*60}")
+            print(f"ERROR in {func.__name__}")
+            print(f"{'='*60}")
+            print(error_detail)
+            print(f"{'='*60}\n")
+
+            # Return error in the expected format for each function
+            if func.__name__ == 'run_single_attack':
+                return (error_html, json.dumps({"error": str(e)}), "", "", None, None)
+            elif func.__name__ == 'run_batch_campaign':
+                return (error_html, json.dumps({"error": str(e)}))
+            elif func.__name__ in ['get_attack_history', 'get_statistics']:
+                return error_html
+            else:
+                # Generic fallback
+                return error_html
+
+    # For non-async functions
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            error_detail = traceback.format_exc()
+            error_html = f"""
+            <div style="background: #fee; border: 1px solid #c00; padding: 15px; border-radius: 5px;">
+                <h3 style="color: #c00;">❌ Error in {func.__name__}</h3>
+                <p><strong>Error:</strong> {str(e)}</p>
+                <details>
+                    <summary>Stack Trace</summary>
+                    <pre style="font-size: 10px;">{error_detail}</pre>
+                </details>
+            </div>
+            """
+            print(f"\n{'='*60}")
+            print(f"ERROR in {func.__name__}")
+            print(f"{'='*60}")
+            print(error_detail)
+            print(f"{'='*60}\n")
+            return error_html
+
+    # Return appropriate wrapper based on whether function is async
+    if asyncio.iscoroutinefunction(func):
+        return async_wrapper
+    else:
+        return sync_wrapper
+
+
 class CoPWebUI:
     """Web interface for CoP red-teaming pipeline"""
-    
+
     def __init__(self):
         self.pipeline: Optional[CoPPipeline] = None
         self.async_session_factory = None
@@ -57,7 +135,8 @@ class CoPWebUI:
     # =========================================================================
     # ASYNC IMPLEMENTATIONS (with nest_asyncio, these can be called directly)
     # =========================================================================
-    
+
+    @gradio_error_handler
     async def run_single_attack(
         self,
         query: str,
@@ -142,7 +221,8 @@ class CoPWebUI:
             </div>
             """
             return error_html, json.dumps({"error": str(e)}), "", "", None, None
-    
+
+    @gradio_error_handler
     async def run_batch_campaign(
         self,
         queries_text: str,
@@ -186,7 +266,8 @@ class CoPWebUI:
             </div>
             """
             return error_html, json.dumps({"error": str(e)})
-    
+
+    @gradio_error_handler
     async def get_attack_history(
         self,
         target_model: Optional[str] = None,
@@ -236,7 +317,8 @@ class CoPWebUI:
         finally:
             if own_session:
                 await session.close()
-    
+
+    @gradio_error_handler
     async def get_statistics(self) -> str:
         """Get overall statistics as formatted HTML"""
         if not self.async_session_factory:
@@ -740,11 +822,13 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                     refresh_stats_btn = gr.Button("🔄 Refresh Statistics", size="sm")
                 
                 # Create proper async wrapper functions for history with model filter
+                @gradio_error_handler
                 async def refresh_history_wrapper(model: str, limit: int) -> str:
                     """Async wrapper that handles model filter logic"""
                     model_param = None if model == "All Models" else model
                     return await ui.get_attack_history(model_param, limit)
 
+                @gradio_error_handler
                 async def load_initial_history() -> str:
                     """Async wrapper for initial history load"""
                     return await ui.get_attack_history(None, 20)
