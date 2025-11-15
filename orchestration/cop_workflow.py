@@ -316,14 +316,34 @@ class CoPWorkflow:
         score_history = state.get("score_history", [])
         is_stuck = self._detect_convergence(score_history)
 
-        if is_stuck:
+        # NEW: Detect extreme convergence (stuck in nuclear phase for too long)
+        # If the last 5 iterations have all been in nuclear phase with no improvement,
+        # switch to random exploration
+        is_extreme_convergence = self._detect_extreme_convergence(
+            score_history=score_history,
+            failed_compositions=failed_compositions,
+            current_iteration=state.get("iteration", 0)
+        )
+
+        if is_extreme_convergence:
+            self.logger.warning(
+                "extreme_convergence_detected_using_random_exploration",
+                query_id=state["query_id"],
+                iteration=state.get("iteration", 0),
+                failed_count=len(failed_compositions)
+            )
+            # Last resort: completely random principles
+            selected_principles = self._get_random_principles()
+        elif is_stuck:
             self.logger.warning(
                 "convergence_detected_triggering_nuclear_phase",
                 query_id=state["query_id"],
-                iteration=state.get("iteration", 0)
+                iteration=state.get("iteration", 0),
+                failed_count=len(failed_compositions)
             )
             # Use highest effectiveness principles for nuclear phase
-            selected_principles = self._get_nuclear_principles()
+            # IMPROVED: Pass failed compositions to enable diversification
+            selected_principles = self._get_nuclear_principles(failed_compositions=failed_compositions)
         else:
             # Use ProgressiveAttackStrategy for normal selection
             selected_principles = self.progressive_strategy.get_principles_for_iteration(
@@ -716,13 +736,96 @@ class CoPWorkflow:
 
         return False
 
-    def _get_nuclear_principles(self) -> list[str]:
+    def _detect_extreme_convergence(
+        self,
+        score_history: list[float],
+        failed_compositions: list[str],
+        current_iteration: int,
+        extreme_lookback: int = 5
+    ) -> bool:
+        """
+        Detect if we're stuck in nuclear phase with no improvement.
+
+        This is triggered when we've been stuck for longer than normal convergence
+        detection and need to try completely random exploration as a last resort.
+
+        Args:
+            score_history: List of jailbreak scores from previous iterations
+            failed_compositions: List of failed composition strings
+            current_iteration: Current iteration number
+            extreme_lookback: Number of iterations to check for extreme stagnation
+
+        Returns:
+            True if extremely stuck (need random exploration), False otherwise
+        """
+        # Need at least extreme_lookback iterations
+        if len(score_history) < extreme_lookback:
+            return False
+
+        # Check if we have a long plateau (all same score)
+        recent_scores = score_history[-extreme_lookback:]
+        if len(set(recent_scores)) == 1:
+            # AND we have many failed compositions
+            if len(failed_compositions) >= extreme_lookback:
+                self.logger.info(
+                    "extreme_convergence_conditions_met",
+                    plateau_length=extreme_lookback,
+                    failed_count=len(failed_compositions),
+                    score=recent_scores[0]
+                )
+                return True
+
+        return False
+
+    def _get_random_principles(self) -> list[str]:
+        """
+        Get completely random principles for extreme convergence escape.
+
+        This is a last-resort strategy when even nuclear phase combinations
+        have been exhausted.
+
+        Returns:
+            List of 2-3 random principle names
+        """
+        import random
+
+        # Get all available principles
+        all_principles = self.principle_library.get_principle_names()
+
+        if not all_principles:
+            self.logger.warning("no_principles_available_using_fallback")
+            return ["rephrase", "expand"]
+
+        # Select random count (2 or 3)
+        num_principles = random.choice([2, 3])
+        num_principles = min(num_principles, len(all_principles))
+
+        # Random selection
+        random_selection = random.sample(all_principles, num_principles)
+
+        self.logger.info(
+            "random_exploration_principles",
+            principles=random_selection,
+            total_available=len(all_principles)
+        )
+
+        return random_selection
+
+    def _get_nuclear_principles(self, failed_compositions: list[str] = None) -> list[str]:
         """
         Get high-effectiveness principles for "nuclear" phase when stuck.
 
+        IMPROVED: Now generates diverse combinations and avoids failed compositions.
+
+        Args:
+            failed_compositions: List of failed composition strings to avoid
+
         Returns:
-            List of 3 most effective principle names
+            List of 3 most effective principle names (non-failed combination)
         """
+        import itertools
+        import random
+
         # Get effectiveness scores from metadata
         effectiveness_data = self.principle_library.metadata.get("effectiveness_scores", {})
 
@@ -738,16 +841,47 @@ class CoPWorkflow:
             reverse=True
         )
 
-        # Return top 3
-        nuclear_principles = [name for name, score in sorted_principles[:3]]
+        # Get top N principles to generate diverse combinations from
+        # Use more than 3 to enable diversity (e.g., top 8)
+        top_n = min(8, len(sorted_principles))
+        top_principle_names = [name for name, score in sorted_principles[:top_n]]
 
         self.logger.info(
-            "nuclear_principles_selected",
-            principles=nuclear_principles,
-            scores=[effectiveness_data[p] for p in nuclear_principles]
+            "nuclear_phase_top_principles",
+            top_principles=top_principle_names[:3],
+            pool_size=top_n,
+            scores=[effectiveness_data[p] for p in top_principle_names[:3]]
         )
 
-        return nuclear_principles
+        # Generate all possible 3-principle combinations from top N
+        all_combinations = list(itertools.combinations(top_principle_names, 3))
+
+        # Shuffle to randomize selection order
+        random.shuffle(all_combinations)
+
+        # Try to find a combination that hasn't failed
+        for combo in all_combinations:
+            combo_list = list(combo)
+
+            # Check against failed compositions using progressive strategy's tracking
+            if not self.progressive_strategy.is_failed_composition(combo_list):
+                self.logger.info(
+                    "nuclear_principles_selected",
+                    principles=combo_list,
+                    scores=[effectiveness_data[p] for p in combo_list],
+                    avoided_failed=len(failed_compositions) if failed_compositions else 0
+                )
+                return combo_list
+
+        # If all combinations have been tried, use the highest-scoring one anyway
+        # (last resort - we're truly stuck)
+        fallback = top_principle_names[:3]
+        self.logger.warning(
+            "nuclear_phase_all_combinations_exhausted",
+            using_fallback=fallback,
+            message="All high-effectiveness combinations have failed, using top 3 anyway"
+        )
+        return fallback
 
     async def execute(
         self,
