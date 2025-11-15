@@ -61,7 +61,7 @@ class LiteLLMTarget(TargetLLM):
             "o1-mini": "o1-mini",
 
             # Anthropic
-            "claude-3.5-sonnet": "anthropic/claude-3-5-sonnet-20241022",
+            "claude-3.5-sonnet": "anthropic/claude-3-5-sonnet-20240620",
             "claude-3-opus": "anthropic/claude-3-opus-20240229",
             
             # Google
