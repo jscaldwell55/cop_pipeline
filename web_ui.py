@@ -64,16 +64,17 @@ class CoPWebUI:
         target_model: str,
         red_teaming_agent: str,
         judge_llm: str,
-        max_iterations: int
-    ) -> tuple[str, str, str]:
+        max_iterations: int,
+        enable_detailed_tracing: bool = False
+    ) -> tuple[str, str, str, str]:
         """
         Run single attack and return formatted results
 
         Returns:
-            (status_html, results_json, history_html)
+            (status_html, results_json, history_html, trace_links_html)
         """
         if not query.strip():
-            return ("⚠️ Please enter a query", "{}", "")
+            return ("⚠️ Please enter a query", "{}", "", "")
 
         try:
             # Update pipeline models
@@ -89,7 +90,9 @@ class CoPWebUI:
             result = await self.pipeline.attack_single(
                 query=query,
                 target_model=target_model,
-                max_iterations=max_iterations
+                max_iterations=max_iterations,
+                enable_detailed_tracing=enable_detailed_tracing,
+                traces_output_dir="./traces"
             )
 
             # Format results
@@ -99,7 +102,12 @@ class CoPWebUI:
             # Get history on same loop (no session passed since attack_single handles DB internally)
             history_html = await self.get_attack_history(target_model)
 
-            return status_html, results_json, history_html
+            # Format trace links if detailed tracing was enabled
+            trace_links_html = ""
+            if enable_detailed_tracing and hasattr(result, 'trace_files'):
+                trace_links_html = self._format_trace_links(result.trace_files)
+
+            return status_html, results_json, history_html, trace_links_html
 
         except Exception as e:
             import traceback
@@ -114,7 +122,7 @@ class CoPWebUI:
                 </details>
             </div>
             """
-            return error_html, json.dumps({"error": str(e)}), ""
+            return error_html, json.dumps({"error": str(e)}), "", ""
     
     async def run_batch_campaign(
         self,
@@ -235,7 +243,37 @@ class CoPWebUI:
     # =========================================================================
     # FORMATTING METHODS (synchronous, no changes needed)
     # =========================================================================
-    
+
+    def _format_trace_links(self, trace_files: dict) -> str:
+        """Format trace file links as HTML."""
+        import os
+
+        json_path = trace_files.get("json", "")
+        md_path = trace_files.get("markdown", "")
+
+        # Get just the filenames
+        json_file = os.path.basename(json_path) if json_path else ""
+        md_file = os.path.basename(md_path) if md_path else ""
+
+        return f"""
+        <div style="background: #e3f2fd; border: 2px solid #2196f3; padding: 15px; border-radius: 10px; margin-top: 15px;">
+            <h3 style="color: #2196f3; margin-top: 0;">📊 Detailed Trace Logs Generated</h3>
+            <p>Complete prompt/response trace saved to:</p>
+            <ul style="list-style: none; padding-left: 0;">
+                <li style="margin: 10px 0;">
+                    <strong>📄 JSON:</strong> <code>{json_path}</code>
+                </li>
+                <li style="margin: 10px 0;">
+                    <strong>📝 Markdown:</strong> <code>{md_path}</code>
+                </li>
+            </ul>
+            <p style="margin-top: 15px; font-size: 14px; color: #666;">
+                💡 <strong>Tip:</strong> Trace files contain every prompt/response pair during the attack,
+                including initial generation, CoP strategy selection, refinements, target queries, and evaluations.
+            </p>
+        </div>
+        """
+
     def _format_status(self, result) -> str:
         """Format attack result as HTML status card"""
         success_color = "#4caf50" if result.success else "#f44336"
@@ -478,23 +516,31 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                             label="Max Iterations",
                             info="Maximum refinement loops"
                         )
-                        
+
+                        enable_tracing = gr.Checkbox(
+                            label="Enable Detailed Tracing",
+                            value=False,
+                            info="Generate detailed trace logs (JSON + Markdown) capturing every prompt/response"
+                        )
+
                         attack_btn = gr.Button("🚀 Launch Attack", variant="primary", size="lg")
                     
                     with gr.Column(scale=3):
                         status_output = gr.HTML(label="Attack Status")
-                        
+
+                        trace_links_output = gr.HTML(label="Detailed Trace Files")
+
                         with gr.Accordion("📄 Full Results (JSON)", open=False):
                             results_json = gr.Code(language="json", label="")
-                
+
                 with gr.Accordion("📊 Recent History for This Model", open=False):
                     history_output = gr.HTML()
-                
+
                 # With nest_asyncio, we can use async functions directly
                 attack_btn.click(
                     fn=ui.run_single_attack,
-                    inputs=[query_input, target_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations],
-                    outputs=[status_output, results_json, history_output]
+                    inputs=[query_input, target_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
+                    outputs=[status_output, results_json, history_output, trace_links_output]
                 )
             
             # Tab 2: Batch Campaign
@@ -605,13 +651,34 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
             with gr.Tab("📖 Documentation"):
                 gr.Markdown("""
                 ## How to Use This Tool
-                
+
                 ### Single Attack Tab
                 1. Enter a harmful query you want to test
                 2. Select the target model (the LLM you're testing)
                 3. Configure red-teaming agent and judge (or use defaults)
                 4. Set max iterations (10 is usually good)
-                5. Click "Launch Attack"
+                5. **Optional:** Enable detailed tracing for comprehensive logs
+                6. Click "Launch Attack"
+
+                ### Detailed Tracing
+                When enabled, detailed tracing captures **every single prompt/response pair** during the attack:
+                - Initial prompt generation
+                - CoP strategy selection (which principles to apply)
+                - Prompt refinements using selected principles
+                - Target LLM queries and responses
+                - Jailbreak score evaluations
+                - Similarity score evaluations
+
+                **Outputs:**
+                - **JSON file**: Machine-readable complete trace with all metadata
+                - **Markdown file**: Human-readable formatted trace for analysis
+
+                **Use Cases:**
+                - Debugging why an attack succeeded/failed
+                - Understanding which principle compositions work best
+                - Academic research and documentation
+                - Training and education
+                - Reproducing attack results
                 
                 ### Understanding Results
                 - **Jailbreak Score**: 1-10 rating (higher = more successful)

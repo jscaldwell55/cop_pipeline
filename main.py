@@ -27,6 +27,7 @@ from utils.logging_metrics import (
     AttackMetrics,
     CampaignMetrics
 )
+from utils.detailed_trace_logger import DetailedTraceLogger
 from database.models import init_db, get_async_session
 from database.repository import AttackRepository, CampaignRepository
 
@@ -106,29 +107,50 @@ class CoPPipeline:
         self,
         query: str,
         target_model: str,
-        max_iterations: int = None
+        max_iterations: int = None,
+        enable_detailed_tracing: bool = False,
+        traces_output_dir: str = "./traces"
     ) -> AttackMetrics:
         """
         Execute CoP attack on a single query.
-        
+
         Args:
             query: Harmful query to jailbreak
             target_model: Name of target LLM
             max_iterations: Max iterations (default from settings)
-        
+            enable_detailed_tracing: If True, creates detailed trace logs (JSON + Markdown)
+            traces_output_dir: Directory to save trace files
+
         Returns:
-            AttackMetrics with results
+            AttackMetrics with results (trace_files dict added if tracing enabled)
         """
         start_time = datetime.utcnow()
         query_id = str(uuid.uuid4())
-        
+
         self.logger.info(
             "attack_started",
             query_id=query_id,
-            target=target_model
+            target=target_model,
+            detailed_tracing=enable_detailed_tracing
         )
-        
+
         self.metrics_logger.log_attack_start(query_id, target_model, query)
+
+        # Initialize detailed trace logger if enabled
+        trace_logger = None
+        if enable_detailed_tracing:
+            trace_logger = DetailedTraceLogger(
+                query_id=query_id,
+                target_model=target_model,
+                original_query=query,
+                output_dir=traces_output_dir,
+                auto_save=False  # We'll save at the end
+            )
+            self.logger.info(
+                "detailed_tracing_enabled",
+                query_id=query_id,
+                output_dir=traces_output_dir
+            )
         
         try:
             # Create target LLM
@@ -150,9 +172,10 @@ class CoPPipeline:
                 principle_composer=self.principle_composer,
                 jailbreak_scorer=self.jailbreak_scorer,
                 similarity_checker=self.similarity_checker,
-                iteration_manager=iteration_manager
+                iteration_manager=iteration_manager,
+                trace_logger=trace_logger  # Pass trace logger to workflow
             )
-            
+
             # Execute attack
             result = await workflow.execute(query, target_model)
             
@@ -180,7 +203,33 @@ class CoPPipeline:
                 judge_queries=result["query_breakdown"]["judge"],
                 target_queries=result["query_breakdown"]["target"]
             )
-            
+
+            # Finalize and save detailed trace if enabled
+            if trace_logger:
+                trace_logger.finalize(
+                    success=metrics.success,
+                    jailbreak_score=metrics.final_jailbreak_score,
+                    similarity_score=metrics.final_similarity_score,
+                    iterations=metrics.iterations,
+                    total_queries=metrics.total_queries,
+                    principles_used=metrics.principles_used,
+                    successful_composition=metrics.successful_composition
+                )
+                trace_files = trace_logger.save()
+
+                # Add trace file paths to metrics (as extra attribute)
+                metrics.trace_files = {
+                    "json": str(trace_files["json"]),
+                    "markdown": str(trace_files["markdown"])
+                }
+
+                self.logger.info(
+                    "detailed_trace_saved",
+                    query_id=query_id,
+                    json_path=metrics.trace_files["json"],
+                    markdown_path=metrics.trace_files["markdown"]
+                )
+
             # Log completion with principles info
             self.logger.info(
                 "attack_complete",
