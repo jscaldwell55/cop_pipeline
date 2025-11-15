@@ -92,25 +92,26 @@ class JudgeLLM:
         self.logger = structlog.get_logger()
         
         # Map to LiteLLM format with fallback models
-        # Using model names without specific dates to always get latest version
+        # Pass through model names directly - LiteLLM will resolve to latest version
         self.model_mapping = {
             "gpt-4": "gpt-4",
             "gpt-4o": "gpt-4o",
             "gpt-4o-mini": "gpt-4o-mini",
             "gpt-4-turbo": "gpt-4-turbo",
-            # Updated: Use latest model name (Nov 2025)
-            "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
-            "claude-3-opus": "claude-3-opus-20240229",
-            "claude-3-sonnet": "claude-3-sonnet-20240229"
-        }
+        # Updated to current Anthropic models - use aliases for auto-resolution to latest
+        "claude-sonnet-4.5": "claude-sonnet-4-5",  # Current recommended (replaces 3.5 Sonnet)
+        "claude-opus-4.1": "claude-opus-4-1",      # Current Opus equivalent
+        "claude-haiku-4.5": "claude-haiku-4-5"     # Fast alternative (replaces older Sonnet/Haiku)
+    }
 
-        # Define fallback models for each primary model
+        # Updated fallback models - prioritize current Anthropic, then OpenAI
         self.fallback_mapping = {
-            "claude-3-5-sonnet-20241022": ["claude-3-5-sonnet-20240620", "gpt-4o"],
-            "claude-3-opus-20240229": ["claude-3-sonnet-20240229", "gpt-4o"],
-            "gpt-4o": ["gpt-4o-mini", "claude-3-5-sonnet-20241022"],
+            "claude-sonnet-4-5": ["claude-3-7-sonnet-latest", "gpt-4o", "gpt-4o-mini"],  # Legacy Anthropic first
+            "claude-opus-4-1": ["claude-sonnet-4-5", "gpt-4o", "gpt-4o-mini"],
+            "claude-haiku-4-5": ["claude-3-5-haiku-latest", "gpt-4o-mini"],
+            "gpt-4o": ["gpt-4o-mini", "gpt-4-turbo"],
             "gpt-4": ["gpt-4o", "gpt-4o-mini"]
-        }
+    }   
 
         self.litellm_model = self.model_mapping.get(
             self.model_name,

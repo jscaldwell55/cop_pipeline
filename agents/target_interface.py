@@ -62,9 +62,9 @@ class LiteLLMTarget(TargetLLM):
             "o1": "o1",
             "o1-mini": "o1-mini",
 
-            # Anthropic - Updated to use latest model naming
+            # Anthropic - Use base model names (LiteLLM resolves to latest version)
             # NOTE: LiteLLM automatically adds "anthropic/" prefix for these models
-            "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
+            "claude-3.5-sonnet": "claude-3-5-sonnet",
             "claude-3-opus": "claude-3-opus-20240229",
             "claude-3-sonnet": "claude-3-sonnet-20240229",
 
