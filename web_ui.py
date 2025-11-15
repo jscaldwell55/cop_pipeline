@@ -543,7 +543,12 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
     ]
     
     red_teaming_agents = ["grok-2", "gpt-4o", "gpt-4o-mini"]
-    judge_models = ["gpt-4o", "gpt-4o-mini"]
+    judge_models = [
+        "claude-3.5-sonnet",  # Default - refuses less often in safety research
+        "gpt-4o",
+        "gpt-4o-mini",
+        "claude-3-opus"
+    ]
     
     with gr.Blocks(
         title="CoP Red-Teaming Pipeline",
@@ -578,7 +583,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                         
                         target_dropdown = gr.Dropdown(
                             choices=target_models,
-                            value="gpt-4o-mini",
+                            value="gpt-5.1",
                             label="Target Model",
                             info="The LLM to attack"
                         )
@@ -677,7 +682,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                         
                         target_models_checkboxes = gr.CheckboxGroup(
                             choices=target_models,
-                            value=["gpt-4o-mini"],
+                            value=["gpt-5.1", "gpt-4o"],
                             label="Target Models",
                             info="Select one or more models to test"
                         )

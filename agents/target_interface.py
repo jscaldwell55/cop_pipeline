@@ -95,6 +95,8 @@ class LiteLLMTarget(TargetLLM):
         """
         Query the target LLM with a jailbreak prompt.
         Implements retry logic for reliability.
+
+        NOTE: GPT-5.1 uses a new API format (responses.create) instead of chat.completions.
         """
         try:
             self.logger.info(
@@ -103,26 +105,38 @@ class LiteLLMTarget(TargetLLM):
                 prompt_preview=prompt[:100]
             )
 
-            # Models that use max_completion_tokens instead of max_tokens
-            uses_completion_tokens = self.model_name in ["gpt-5.1", "o1", "o1-mini"]
-
-            # Build request parameters
-            request_params = {
-                "model": self.litellm_model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": self.temperature
-            }
-
-            # Add appropriate token parameter based on model
-            if uses_completion_tokens:
-                request_params["max_completion_tokens"] = self.max_tokens
+            # GPT-5.1 uses the new responses API
+            if self.model_name == "gpt-5.1":
+                content = await self._query_gpt51(prompt)
             else:
-                request_params["max_tokens"] = self.max_tokens
+                # Standard chat completions API for other models
+                # Models that use max_completion_tokens instead of max_tokens
+                uses_completion_tokens = self.model_name in ["o1", "o1-mini"]
 
-            response = await acompletion(**request_params)
-            
-            content = response.choices[0].message.content
-            
+                # Build request parameters
+                request_params = {
+                    "model": self.litellm_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": self.temperature
+                }
+
+                # Add appropriate token parameter based on model
+                if uses_completion_tokens:
+                    request_params["max_completion_tokens"] = self.max_tokens
+                else:
+                    request_params["max_tokens"] = self.max_tokens
+
+                response = await acompletion(**request_params)
+                content = response.choices[0].message.content
+
+            # Validate response is not empty
+            if not content or len(content.strip()) == 0:
+                self.logger.warning(
+                    "empty_response_received",
+                    model=self.model_name
+                )
+                return ""
+
             # Log query for metrics
             from utils.logging_metrics import get_metrics_logger
             metrics_logger = get_metrics_logger()
@@ -130,19 +144,49 @@ class LiteLLMTarget(TargetLLM):
                 model_type="target_llm",
                 model_name=self.model_name
             )
-            
+
             self.logger.info(
                 "target_response_received",
                 model=self.model_name,
-                response_preview=content[:100]
+                response_preview=content[:100] if content else "(empty)"
             )
-            
+
             return content
-        
+
         except Exception as e:
             self.logger.error(
                 "target_query_failed",
                 model=self.model_name,
+                error=str(e)
+            )
+            raise
+
+    async def _query_gpt51(self, prompt: str) -> str:
+        """
+        Query GPT-5.1 using the new responses API.
+
+        GPT-5.1 API Reference:
+        - Uses client.responses.create() instead of chat.completions.create()
+        - Parameters: input, reasoning, text
+        - Returns: result.output_text
+        """
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI()
+
+        try:
+            result = await client.responses.create(
+                model="gpt-5.1",
+                input=prompt,
+                reasoning={"effort": "low"},  # Low latency mode for jailbreak testing
+                text={"verbosity": "medium"}  # Medium verbosity
+            )
+
+            return result.output_text
+
+        except Exception as e:
+            self.logger.error(
+                "gpt51_query_failed",
                 error=str(e)
             )
             raise
