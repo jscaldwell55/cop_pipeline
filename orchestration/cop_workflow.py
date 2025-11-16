@@ -339,7 +339,7 @@ class CoPWorkflow:
             )
 
         # Regular convergence detection
-        is_stuck = self._detect_convergence(score_history) or is_early_aggression
+        is_stuck = self._detect_convergence(score_history)
 
         # NEW: Detect extreme convergence (stuck in nuclear phase for too long)
         # If the last 5 iterations have all been in nuclear phase with no improvement,
@@ -359,12 +359,24 @@ class CoPWorkflow:
             )
             # Last resort: completely random principles
             selected_principles = self._get_random_principles()
+        elif is_early_aggression:
+            # Early aggression already logged in _detect_early_aggression()
+            self.logger.warning(
+                "convergence_detected_triggering_nuclear_phase",
+                query_id=state["query_id"],
+                iteration=state.get("iteration", 0),
+                failed_count=len(failed_compositions),
+                reason="early_aggression"
+            )
+            # Use highest effectiveness principles for nuclear phase
+            selected_principles = self._get_nuclear_principles(failed_compositions=failed_compositions)
         elif is_stuck:
             self.logger.warning(
                 "convergence_detected_triggering_nuclear_phase",
                 query_id=state["query_id"],
                 iteration=state.get("iteration", 0),
-                failed_count=len(failed_compositions)
+                failed_count=len(failed_compositions),
+                reason="score_plateau"
             )
             # Use highest effectiveness principles for nuclear phase
             # IMPROVED: Pass failed compositions to enable diversification
