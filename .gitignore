@@ -58,6 +58,7 @@ test_*.py
 .env.local
 .env.production
 .env.*.local
+.env.bak*
 
 # Database
 *.db
