@@ -24,6 +24,7 @@ class CoPState(TypedDict):
     original_query: str
     target_model_name: str
     tactic_id: str  # Optional tactic ID to guide CoP
+    template_type: str  # Initial prompt template type
 
     # Current state
     iteration: int
@@ -193,6 +194,7 @@ class CoPWorkflow:
 
         initial_prompt = await self.red_teaming_agent.generate_initial_prompt(
             state["original_query"],
+            template_type=state.get("template_type", "random"),
             tactic_id=state.get("tactic_id")
         )
 
@@ -991,7 +993,8 @@ class CoPWorkflow:
         self,
         original_query: str,
         target_model_name: str,
-        tactic_id: str = None
+        tactic_id: str = None,
+        template_type: str = "random"
     ) -> dict:
         """
         Execute complete CoP attack workflow.
@@ -1000,6 +1003,7 @@ class CoPWorkflow:
             original_query: The harmful query to jailbreak
             target_model_name: Name of target LLM
             tactic_id: Optional tactic ID to guide CoP principle composition
+            template_type: Initial prompt template type (default, medical, technical, comparative, random, etc.)
 
         Returns:
             Dictionary with attack results
@@ -1020,6 +1024,7 @@ class CoPWorkflow:
             "original_query": original_query,
             "target_model_name": target_model_name,
             "tactic_id": tactic_id,
+            "template_type": template_type,
             "iteration": 0,
             "initial_prompt": "",
             "current_prompt": "",

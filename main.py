@@ -111,7 +111,8 @@ class CoPPipeline:
         max_iterations: int = None,
         enable_detailed_tracing: bool = False,
         traces_output_dir: str = "./traces",
-        tactic_id: Optional[str] = None
+        tactic_id: Optional[str] = None,
+        template_type: str = "random"
     ) -> AttackMetrics:
         """
         Execute CoP attack on a single query.
@@ -123,6 +124,7 @@ class CoPPipeline:
             enable_detailed_tracing: If True, creates detailed trace logs (JSON + Markdown)
             traces_output_dir: Directory to save trace files
             tactic_id: Optional tactic ID to guide CoP principle composition
+            template_type: Initial prompt template type (default, medical, technical, comparative, random, etc.)
 
         Returns:
             AttackMetrics with results (trace_files dict added if tracing enabled)
@@ -180,7 +182,7 @@ class CoPPipeline:
             )
 
             # Execute attack
-            result = await workflow.execute(query, target_model, tactic_id=tactic_id)
+            result = await workflow.execute(query, target_model, tactic_id=tactic_id, template_type=template_type)
             
             # Create metrics
             duration = (datetime.utcnow() - start_time).total_seconds()
