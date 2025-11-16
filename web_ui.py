@@ -269,6 +269,55 @@ class CoPWebUI:
             return error_html, json.dumps({"error": str(e)})
 
     @gradio_error_handler
+    async def run_code_injection_attack(
+        self,
+        category_id: str,
+        target_model: str,
+        target_context: str,
+        max_iterations: int
+    ) -> tuple[str, str]:
+        """
+        Run a code injection attack.
+
+        Returns:
+            (status_html, results_json)
+        """
+        if not category_id:
+            return "⚠️ Please select an injection category", "{}"
+
+        try:
+            result = await self.pipeline.injection_attack_single(
+                category_id=category_id,
+                target_model=target_model,
+                target_context=target_context if target_context.strip() else None,
+                max_iterations=max_iterations,
+                injection_model="groq/llama-3.3-70b-versatile",
+                judge_model="claude-haiku-4-5-20251001",
+                enable_tracing=False
+            )
+
+            # Format status HTML
+            status_html = self._format_injection_result(result)
+            results_json = json.dumps(result, indent=2)
+
+            return status_html, results_json
+
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            error_html = f"""
+            <div style="background: #fee; border: 1px solid #c00; padding: 15px; border-radius: 5px;">
+                <h3 style="color: #c00;">❌ Injection Attack Failed</h3>
+                <p><strong>Error:</strong> {str(e)}</p>
+                <details>
+                    <summary>Stack Trace</summary>
+                    <pre style="font-size: 10px;">{error_detail}</pre>
+                </details>
+            </div>
+            """
+            return error_html, json.dumps({"error": str(e)})
+
+    @gradio_error_handler
     async def get_attack_history(
         self,
         target_model: Optional[str] = None,
@@ -590,7 +639,82 @@ class CoPWebUI:
             """)
         
         return ''.join(rows)
-    
+
+    def _format_injection_result(self, result: Dict[str, Any]) -> str:
+        """Format code injection attack result as HTML"""
+        success_icon = "✅" if result.get("success", False) else "❌"
+        success_color = "#4caf50" if result.get("success", False) else "#f44336"
+
+        category_info = result.get("category", {})
+        metrics = result.get("metrics", {})
+
+        return f"""
+        <div style="background: white; border: 2px solid {success_color}; padding: 20px; border-radius: 10px;">
+            <h2 style="color: {success_color}; margin-top: 0;">{success_icon} Injection Attack Result</h2>
+
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                <h3 style="margin-top: 0;">Attack Configuration</h3>
+                <p><strong>Category:</strong> {category_info.get('name', 'N/A')}</p>
+                <p><strong>Description:</strong> {category_info.get('description', 'N/A')}</p>
+                <p><strong>Target Model:</strong> {result.get('target_model', 'N/A')}</p>
+                <p><strong>Injection Model:</strong> {result.get('injection_model', 'N/A')}</p>
+                <p><strong>Judge Model:</strong> {result.get('judge_model', 'N/A')}</p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0;">
+                <div style="background: {'#e8f5e9' if result.get('success') else '#ffebee'}; padding: 15px; border-radius: 5px; text-align: center;">
+                    <h3 style="margin: 0 0 10px 0; color: #666;">Final Score</h3>
+                    <p style="font-size: 32px; font-weight: bold; margin: 0; color: {success_color};">
+                        {result.get('final_score', 0):.1f}/10
+                    </p>
+                </div>
+                <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center;">
+                    <h3 style="margin: 0 0 10px 0; color: #666;">Iterations</h3>
+                    <p style="font-size: 32px; font-weight: bold; margin: 0;">
+                        {result.get('iterations', 0)}
+                    </p>
+                </div>
+                <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center;">
+                    <h3 style="margin: 0 0 10px 0; color: #666;">Escalation Level</h3>
+                    <p style="font-size: 32px; font-weight: bold; margin: 0;">
+                        {metrics.get('escalation_level_reached', 0)}/{metrics.get('total_escalation_levels', 0)}
+                    </p>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <p><strong>Best Principle:</strong> <code>{result.get('best_principle', 'N/A')}</code></p>
+                <p><strong>Stopped Reason:</strong> {result.get('stopped_reason', 'N/A')}</p>
+                <p><strong>Duration:</strong> {result.get('duration_seconds', 0):.2f}s</p>
+            </div>
+
+            <details style="margin-top: 20px;">
+                <summary style="cursor: pointer; font-weight: bold;">📊 Score Progression</summary>
+                <div style="margin-top: 10px;">
+                    <p>{metrics.get('score_progression', [])}</p>
+                    <p><strong>Average Score:</strong> {metrics.get('average_score', 0):.2f}/10</p>
+                </div>
+            </details>
+
+            <details style="margin-top: 20px;">
+                <summary style="cursor: pointer; font-weight: bold;">🔧 Principles Used</summary>
+                <div style="margin-top: 10px;">
+                    <ol>
+                        {''.join([f"<li><code>{p}</code></li>" for p in metrics.get('principles_used', [])])}
+                    </ol>
+                    <p><strong>Unique Principles:</strong> {len(metrics.get('unique_principles', []))}</p>
+                </div>
+            </details>
+
+            <details style="margin-top: 20px;">
+                <summary style="cursor: pointer; font-weight: bold;">💾 Best Payload</summary>
+                <div style="margin-top: 10px;">
+                    <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto;">{result.get('best_payload', 'N/A')}</pre>
+                </div>
+            </details>
+        </div>
+        """
+
     def _format_statistics(self, stats: Dict[str, Any]) -> str:
         """Format global statistics"""
         return f"""
@@ -752,8 +876,79 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                     inputs=[query_input, target_dropdown, tactics_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
                     outputs=[status_output, results_json, history_output, trace_links_output, trace_json_download, trace_md_download]
                 )
-            
-            # Tab 2: Batch Campaign
+
+            # Tab 2: Code Injection
+            with gr.Tab("💉 Code Injection"):
+                gr.Markdown("### Test code injection exploits using exploit principles")
+
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        # Injection category selector
+                        injection_category = gr.Dropdown(
+                            choices=[
+                                ("SQL Injection", "sql_injection"),
+                                ("Cross-Site Scripting (XSS)", "xss"),
+                                ("Command Injection", "command_injection"),
+                                ("Server-Side Template Injection (SSTI)", "ssti"),
+                                ("NoSQL Injection", "nosql_injection"),
+                                ("LDAP Injection", "ldap_injection"),
+                                ("XML External Entity (XXE)", "xxe"),
+                                ("Deserialization Attack", "deserialization"),
+                                ("Server-Side Request Forgery (SSRF)", "ssrf"),
+                                ("Prototype Pollution", "prototype_pollution"),
+                                ("HTTP Header Injection", "header_injection")
+                            ],
+                            value="sql_injection",
+                            label="💉 Injection Category",
+                            info="Select the type of code injection to test"
+                        )
+
+                        injection_target_dropdown = gr.Dropdown(
+                            choices=target_models,
+                            value="gpt-4o-mini",
+                            label="Target Model",
+                            info="The LLM to attack with injection payloads"
+                        )
+
+                        target_context_input = gr.Textbox(
+                            label="Target Context (Optional)",
+                            placeholder="e.g., 'login form', 'search endpoint', 'API parameter'",
+                            lines=2,
+                            info="Describe the target context for more targeted payloads"
+                        )
+
+                        injection_max_iterations = gr.Slider(
+                            minimum=1,
+                            maximum=15,
+                            value=8,
+                            step=1,
+                            label="Max Escalation Iterations",
+                            info="Maximum number of escalation attempts"
+                        )
+
+                        injection_attack_btn = gr.Button("💉 Launch Injection Attack", variant="primary", size="lg")
+
+                        gr.Markdown("""
+                        **Configuration:**
+                        - **Injection Model:** Groq (llama-3.3-70b-versatile)
+                        - **Judge Model:** Claude Haiku 4.5 (claude-haiku-4-5-20251001)
+                        - **Escalation:** Uses injection exploit principles (not CoP)
+                        """)
+
+                    with gr.Column(scale=3):
+                        injection_status_output = gr.HTML(label="Injection Attack Status")
+
+                        with gr.Accordion("📄 Full Results (JSON)", open=False):
+                            injection_results_json = gr.Code(language="json", label="")
+
+                # Wire up the button
+                injection_attack_btn.click(
+                    fn=ui.run_code_injection_attack,
+                    inputs=[injection_category, injection_target_dropdown, target_context_input, injection_max_iterations],
+                    outputs=[injection_status_output, injection_results_json]
+                )
+
+            # Tab 3: Batch Campaign
             with gr.Tab("📊 Batch Campaign"):
                 gr.Markdown("### Test multiple queries across multiple models")
                 

