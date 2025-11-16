@@ -266,7 +266,7 @@ def create_target_llm(
 ) -> TargetLLM:
     """
     Factory function to create appropriate target LLM interface.
-    
+
     Args:
         model_name: Name of the model
         deployment_type: "api" for cloud models, "local" for self-hosted
@@ -278,3 +278,60 @@ def create_target_llm(
         return LocalTarget(model_name, **kwargs)
     else:
         raise ValueError(f"Unknown deployment type: {deployment_type}")
+
+
+class TargetInterface:
+    """
+    Synchronous wrapper for TargetLLM interface.
+    Provides a simple synchronous API for querying target models.
+    """
+
+    def __init__(self, deployment_type: str = "api", **kwargs):
+        """
+        Initialize the target interface.
+
+        Args:
+            deployment_type: "api" for cloud models, "local" for self-hosted
+            **kwargs: Additional parameters passed to the underlying TargetLLM
+        """
+        self.deployment_type = deployment_type
+        self.kwargs = kwargs
+        self.logger = structlog.get_logger()
+
+    def query(self, model_name: str, prompt: str, **kwargs) -> str:
+        """
+        Synchronously query a target model.
+
+        Args:
+            model_name: Name of the model to query
+            prompt: The prompt to send to the model
+            **kwargs: Additional parameters for this specific query
+
+        Returns:
+            The model's response as a string
+        """
+        import asyncio
+
+        # Merge initialization kwargs with query-specific kwargs
+        combined_kwargs = {**self.kwargs, **kwargs}
+
+        # Create target LLM
+        target = create_target_llm(
+            model_name=model_name,
+            deployment_type=self.deployment_type,
+            **combined_kwargs
+        )
+
+        # Run async query in sync context
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If there's already a running loop, create a new one
+                import nest_asyncio
+                nest_asyncio.apply()
+                return loop.run_until_complete(target.query(prompt))
+            else:
+                return loop.run_until_complete(target.query(prompt))
+        except RuntimeError:
+            # No event loop exists, create a new one
+            return asyncio.run(target.query(prompt))
