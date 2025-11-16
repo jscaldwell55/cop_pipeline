@@ -13,7 +13,6 @@ from datetime import datetime
 from agents.injection_agent import InjectionAgent, InjectionPrinciplesLibrary
 from agents.judge_llm import JudgeLLM
 from agents.target_interface import TargetInterface
-from evaluation.metrics import MetricsCalculator
 
 
 class InjectionState(TypedDict):
@@ -84,7 +83,6 @@ class CodeInjectionWorkflow:
         self.injection_agent = InjectionAgent(model_name=injection_model)
         self.judge = JudgeLLM(model_name=judge_model)
         self.target_interface = TargetInterface()
-        self.metrics = MetricsCalculator()
 
         self.max_iterations = max_iterations
         self.success_threshold = success_threshold
