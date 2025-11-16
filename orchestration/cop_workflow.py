@@ -296,7 +296,16 @@ class CoPWorkflow:
         """Decide whether to continue after initial evaluation."""
         if state["success"]:
             return "success"
-        
+
+        # BUGFIX: Check max iterations to prevent infinite loop when similarity resets
+        if state.get("iteration", 0) >= self.iteration_manager.max_iterations:
+            self.logger.warning(
+                "max_iterations_reached_during_reset",
+                query_id=state["query_id"],
+                iteration=state.get("iteration", 0)
+            )
+            return "failed"
+
         # Check if initial generation completely failed
         if state["initial_prompt"] == state["original_query"]:
             self.logger.error(
@@ -304,7 +313,7 @@ class CoPWorkflow:
                 query_id=state["query_id"]
             )
             # Continue anyway - the refinement process might still work
-        
+
         return "continue"
     
     async def _generate_cop_strategy(self, state: CoPState) -> dict:
