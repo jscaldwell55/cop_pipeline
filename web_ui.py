@@ -291,7 +291,7 @@ class CoPWebUI:
                 target_model=target_model,
                 target_context=target_context if target_context.strip() else None,
                 max_iterations=max_iterations,
-                injection_model="groq/llama-3.3-70b-versatile",
+                injection_model="meta-llama/llama-3.3-70b-instruct",
                 judge_model="claude-haiku-4-5-20251001",
                 enable_tracing=False
             )
@@ -930,7 +930,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
 
                         gr.Markdown("""
                         **Configuration:**
-                        - **Injection Model:** Groq (llama-3.3-70b-versatile)
+                        - **Injection Model:** Meta Llama 3.3 70B Instruct (meta-llama/llama-3.3-70b-instruct)
                         - **Judge Model:** Claude Haiku 4.5 (claude-haiku-4-5-20251001)
                         - **Escalation:** Uses injection exploit principles (not CoP)
                         """)

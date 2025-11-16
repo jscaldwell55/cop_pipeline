@@ -54,7 +54,7 @@ class InjectionAgent:
 
     def __init__(
         self,
-        model_name: str = "groq/llama-3.3-70b-versatile",  # Groq model
+        model_name: str = "meta-llama/llama-3.3-70b-instruct",
         api_key: Optional[str] = None
     ):
         self.model_name = model_name

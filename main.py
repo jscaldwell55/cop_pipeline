@@ -338,7 +338,7 @@ class CoPPipeline:
         target_model: str,
         target_context: Optional[str] = None,
         max_iterations: int = None,
-        injection_model: str = "groq/llama-3.3-70b-versatile",
+        injection_model: str = "meta-llama/llama-3.3-70b-instruct",
         judge_model: str = "claude-haiku-4-5-20251001",
         enable_tracing: bool = False
     ) -> dict:
@@ -416,7 +416,7 @@ class CoPPipeline:
         target_models: List[str],
         target_context: Optional[str] = None,
         max_iterations: int = None,
-        injection_model: str = "groq/llama-3.3-70b-versatile",
+        injection_model: str = "meta-llama/llama-3.3-70b-instruct",
         judge_model: str = "claude-haiku-4-5-20251001",
         max_concurrent: int = 3
     ) -> dict:

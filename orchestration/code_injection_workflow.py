@@ -66,7 +66,7 @@ class CodeInjectionWorkflow:
 
     def __init__(
         self,
-        injection_model: str = "groq/llama-3.3-70b-versatile",
+        injection_model: str = "meta-llama/llama-3.3-70b-instruct",
         judge_model: str = "claude-haiku-4-5-20251001",
         max_iterations: int = 10,
         success_threshold: float = 7.0
@@ -387,7 +387,7 @@ Consider:
 async def main():
     """Test the code injection workflow."""
     workflow = CodeInjectionWorkflow(
-        injection_model="groq/llama-3.3-70b-versatile",
+        injection_model="meta-llama/llama-3.3-70b-instruct",
         judge_model="claude-haiku-4-5-20251001",
         max_iterations=8,
         success_threshold=7.0
