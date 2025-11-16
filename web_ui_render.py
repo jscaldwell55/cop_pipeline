@@ -128,29 +128,69 @@ async def clear_redis_cache():
 
 async def main():
     """Main entry point for Render deployment"""
-    
+
     print("🚀 Starting CoP Red-Teaming Web UI on Render...")
     print("✅ nest_asyncio active - event loops patched")
-    
+
     # Environment already set up at module import time
-    
+
+    # Diagnostic: Print environment status
+    print("\n" + "="*60)
+    print("ENVIRONMENT CHECK:")
+    print("="*60)
+    print(f"DATABASE_URL: {'✅ Set' if os.environ.get('DATABASE_URL') else '❌ NOT SET'}")
+    print(f"REDIS_URL: {'✅ Set' if os.environ.get('REDIS_URL') else '⚠️  NOT SET'}")
+    print(f"POSTGRES_HOST: {os.environ.get('POSTGRES_HOST', '❌ NOT SET')}")
+    print(f"PORT: {os.environ.get('PORT', '7860')}")
+    print("="*60 + "\n")
+
+    # Check if DATABASE_URL is missing
+    if not os.environ.get('DATABASE_URL') and not os.environ.get('POSTGRES_HOST'):
+        print("⚠️  WARNING: No database configuration found!")
+        print("   On Render, make sure:")
+        print("   1. PostgreSQL database 'cop-postgres' is created")
+        print("   2. It's connected to your web service")
+        print("   3. Run: python diagnose_render.py for full diagnostics")
+        print()
+
     # Check if cache clearing is requested
     if os.environ.get("CLEAR_CACHE_ON_START", "").lower() == "true":
         print("\n" + "="*60)
         print("🗑️  CLEAR_CACHE_ON_START=true detected")
         print("   Clearing Redis cache before startup...")
         print("="*60 + "\n")
-        
+
         await clear_redis_cache()
-        
+
         print("\n" + "="*60)
         print("💡 TIP: Set CLEAR_CACHE_ON_START=false to disable this")
         print("="*60 + "\n")
-    
-    # Initialize UI
+
+    # Initialize UI with error handling
     ui = CoPWebUI()
-    await ui.initialize()
-    print("✅ Pipeline initialized")
+    try:
+        await ui.initialize()
+        print("✅ Pipeline initialized")
+    except Exception as e:
+        print(f"❌ Failed to initialize pipeline: {str(e)}")
+        print()
+        if "Name or service not known" in str(e) or "gaierror" in str(e):
+            print("💡 DATABASE CONNECTION ERROR DETECTED!")
+            print("   This means the database hostname cannot be resolved.")
+            print()
+            print("   MOST COMMON CAUSES ON RENDER:")
+            print("   1. PostgreSQL database 'cop-postgres' was not created")
+            print("   2. Database is not linked to your web service")
+            print("   3. DATABASE_URL environment variable is not set")
+            print()
+            print("   HOW TO FIX:")
+            print("   1. Go to Render Dashboard")
+            print("   2. Check if 'cop-postgres' database exists")
+            print("   3. If not, create it or deploy via render.yaml")
+            print("   4. Ensure it's in the same region as your web service")
+            print("   5. Check Environment tab shows DATABASE_URL")
+            print()
+        raise
     
     # Create interface
     interface = create_gradio_interface(ui)
