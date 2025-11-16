@@ -70,15 +70,8 @@ class Settings(BaseSettings):
     @field_validator('postgres_password', mode='before')
     @classmethod
     def validate_postgres_password(cls, v, info):
-        """Allow postgres_password to be optional if DATABASE_URL is provided"""
-        if v is None:
-            # Check if DATABASE_URL exists in environment
-            database_url = info.data.get('database_url_override') or os.environ.get('DATABASE_URL')
-            if not database_url:
-                raise ValueError(
-                    "Either postgres_password or DATABASE_URL must be provided. "
-                    "On Render, DATABASE_URL should be automatically set."
-                )
+        """Allow postgres_password to be optional - database is not required"""
+        # Database is completely optional now, no validation needed
         return v
     
     @property

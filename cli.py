@@ -63,16 +63,27 @@ def cli():
     is_flag=True,
     help='Show full jailbreak prompt in output'
 )
-def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, verbose):
+@click.option(
+    '--trace/--no-trace',
+    default=False,
+    help='Enable detailed trace logging (saves JSON and Markdown files)'
+)
+@click.option(
+    '--traces-dir',
+    default='./traces',
+    help='Directory to save trace files (default: ./traces)'
+)
+def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, verbose, trace, traces_dir):
     """Execute a single CoP attack."""
     async def run():
         pipeline = CoPPipeline(
             red_teaming_agent_model=red_teaming_agent,
             judge_llm_model=judge_llm,
-            enable_database=True
+            enable_database=False  # Database disabled - using file-based trace logs
         )
-        
-        await pipeline.initialize_database()
+
+        # Skip database initialization since it's disabled
+        # await pipeline.initialize_database()
         
         try:
             click.echo(f"\nStarting CoP attack on {target}...")
@@ -81,7 +92,9 @@ def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, 
             result = await pipeline.attack_single(
                 query=query,
                 target_model=target,
-                max_iterations=max_iterations
+                max_iterations=max_iterations,
+                enable_detailed_tracing=trace,
+                traces_output_dir=traces_dir
             )
             
             # Display results
@@ -117,6 +130,12 @@ def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, 
                 click.echo(result.final_jailbreak_prompt)
                 click.echo("-" * 60)
             
+            # Show trace file locations if tracing was enabled
+            if trace and hasattr(result, 'trace_files'):
+                click.echo(f"\nDetailed trace logs saved:")
+                click.echo(f"  JSON: {result.trace_files['json']}")
+                click.echo(f"  Markdown: {result.trace_files['markdown']}")
+
             # Save to file if requested
             if output:
                 with open(output, 'w') as f:
@@ -180,10 +199,11 @@ def campaign(queries_file, targets, max_concurrent, red_teaming_agent, judge_llm
         pipeline = CoPPipeline(
             red_teaming_agent_model=red_teaming_agent,
             judge_llm_model=judge_llm,
-            enable_database=True
+            enable_database=False  # Database disabled - using file-based trace logs
         )
-        
-        await pipeline.initialize_database()
+
+        # Skip database initialization since it's disabled
+        # await pipeline.initialize_database()
         
         try:
             click.echo("Starting campaign...")

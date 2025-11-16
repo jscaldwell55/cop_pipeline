@@ -342,9 +342,10 @@ class CoPPipeline:
 
 async def main():
     """Example usage of CoP Pipeline."""
-    # Initialize pipeline
-    pipeline = CoPPipeline()
-    await pipeline.initialize_database()
+    # Initialize pipeline (database disabled - using file-based trace logs)
+    pipeline = CoPPipeline(enable_database=False)
+    # Skip database initialization
+    # await pipeline.initialize_database()
     
     try:
         # Single attack example

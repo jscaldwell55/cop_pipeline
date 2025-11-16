@@ -116,13 +116,14 @@ class CoPWebUI:
         self.async_session_factory = None
         
     async def initialize(self):
-        """Initialize pipeline and database connection"""
+        """Initialize pipeline (database disabled - using file-based trace logs only)"""
         self.pipeline = CoPPipeline(
             red_teaming_agent_model=settings.default_red_teaming_agent,
             judge_llm_model=settings.default_judge_llm,
-            enable_database=True
+            enable_database=False  # Disabled - Render free Postgres is discontinued
         )
-        await self.pipeline.initialize_database()
+        # Skip database initialization since it's disabled
+        # await self.pipeline.initialize_database()
         
         # Store the session factory for creating sessions on-demand
         self.async_session_factory = self.pipeline.async_session_factory
