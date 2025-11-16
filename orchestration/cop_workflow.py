@@ -1088,7 +1088,8 @@ class CoPWorkflow:
         multi_turn = EnhancedMultiTurnOrchestrator(
             target_llm=self.target_llm,
             jailbreak_scorer=self.jailbreak_scorer,
-            red_teaming_agent=self.red_teaming_agent
+            red_teaming_agent=self.red_teaming_agent,
+            trace_logger=self.trace_logger
         )
 
         # Execute context-building attack

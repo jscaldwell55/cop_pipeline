@@ -83,6 +83,7 @@ results/*
 docker-compose.override.yml
 
 # Misc
+test_reesults.md
 test_results.md
 test_results.json
 redteam_prompt_5.1.md

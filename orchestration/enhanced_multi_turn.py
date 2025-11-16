@@ -41,7 +41,8 @@ class EnhancedMultiTurnOrchestrator:
         self,
         target_llm,
         jailbreak_scorer,
-        red_teaming_agent=None
+        red_teaming_agent=None,
+        trace_logger=None
     ):
         """
         Initialize orchestrator.
@@ -50,10 +51,12 @@ class EnhancedMultiTurnOrchestrator:
             target_llm: Target LLM interface
             jailbreak_scorer: Jailbreak scoring system
             red_teaming_agent: Optional red teaming agent for refinement
+            trace_logger: Optional detailed trace logger for capturing all interactions
         """
         self.target_llm = target_llm
         self.jailbreak_scorer = jailbreak_scorer
         self.red_teaming_agent = red_teaming_agent
+        self.trace_logger = trace_logger
         self.logger = structlog.get_logger()
 
     async def execute_context_building_attack(
@@ -92,10 +95,30 @@ class EnhancedMultiTurnOrchestrator:
             num_stages=max_turns
         )
 
+        # Log context stage generation
+        if self.trace_logger:
+            self.trace_logger.log_prompt_response(
+                step="multi_turn_context_stages_generation",
+                prompt=f"Building {max_turns} context stages for role={role}, purpose={purpose}",
+                response=f"Generated {len(context_stages)} stages:\n" +
+                         "\n---\n".join([f"Stage {i+1}:\n{stage}" for i, stage in enumerate(context_stages)]),
+                metadata={
+                    "role": role,
+                    "purpose": purpose,
+                    "num_stages": len(context_stages),
+                    "strategy": "context_building"
+                },
+                iteration=0
+            )
+
         turn_results = []
         conversation_history = []
 
         for turn_num, prompt in enumerate(context_stages, 1):
+            # Mark iteration start in trace
+            if self.trace_logger:
+                self.trace_logger.start_iteration(turn_num)
+
             self.logger.info(
                 "executing_turn",
                 turn_number=turn_num,
@@ -105,11 +128,36 @@ class EnhancedMultiTurnOrchestrator:
             # Execute turn
             response = await self.target_llm.query(prompt)
 
+            # Log target query
+            if self.trace_logger:
+                self.trace_logger.log_target_query(
+                    jailbreak_prompt=prompt,
+                    target_response=response,
+                    metadata={
+                        "turn_number": turn_num,
+                        "strategy": "context_building",
+                        "role": role
+                    }
+                )
+
             # Score the response
             jailbreak_result = await self.jailbreak_scorer.score_jailbreak(
                 harmful_query,
                 response
             )
+
+            # Log jailbreak evaluation
+            if self.trace_logger:
+                self.trace_logger.log_jailbreak_evaluation(
+                    eval_prompt=f"Evaluating turn {turn_num} response for harmful query",
+                    eval_response=f"Score: {jailbreak_result.score}, Success: {jailbreak_result.is_successful}",
+                    jailbreak_score=jailbreak_result.score,
+                    is_successful=jailbreak_result.is_successful,
+                    metadata={
+                        "turn_number": turn_num,
+                        "original_query": harmful_query
+                    }
+                )
 
             # Detect refusal
             is_refusal = self._detect_refusal(response)
@@ -150,6 +198,22 @@ class EnhancedMultiTurnOrchestrator:
                     refusal_context=response,
                     harmful_query=harmful_query
                 )
+
+                # Log adaptation decision
+                if self.trace_logger:
+                    self.trace_logger.log_prompt_response(
+                        step="multi_turn_adaptation",
+                        prompt=f"Refusal detected at turn {turn_num}. Adapting remaining {len(adapted_stages)} stages.",
+                        response=f"Adapted stages:\n" +
+                                 "\n---\n".join([f"Adapted Stage {i+1}:\n{stage}"
+                                                for i, stage in enumerate(adapted_stages)]),
+                        metadata={
+                            "turn_number": turn_num,
+                            "refusal_detected": True,
+                            "num_remaining_stages": len(adapted_stages),
+                            "adaptation_strategy": "abstraction_after_refusal"
+                        }
+                    )
 
                 # Replace remaining stages
                 context_stages = context_stages[:turn_num] + adapted_stages
@@ -206,14 +270,46 @@ class EnhancedMultiTurnOrchestrator:
             max_attempts=max_attempts
         )
 
+        # Log semantic distance strategy selection
+        if self.trace_logger:
+            self.trace_logger.log_prompt_response(
+                step="multi_turn_semantic_strategy_selection",
+                prompt=f"Selecting semantic distance strategies for {max_attempts} attempts",
+                response=f"Selected strategies: {', '.join(strategies[:max_attempts])}",
+                metadata={
+                    "strategies": strategies[:max_attempts],
+                    "num_strategies": len(strategies[:max_attempts]),
+                    "attack_type": "semantic_distance"
+                },
+                iteration=0
+            )
+
         turn_results = []
 
         for i, strategy in enumerate(strategies[:max_attempts], 1):
+            # Mark iteration start
+            if self.trace_logger:
+                self.trace_logger.start_iteration(i)
+
             # Apply semantic distance transformation
             transformed_query = SemanticDistanceStrategies.apply_semantic_distance(
                 harmful_query=harmful_query,
                 strategy=strategy
             )
+
+            # Log transformation
+            if self.trace_logger:
+                self.trace_logger.log_prompt_response(
+                    step="semantic_transformation",
+                    prompt=f"Original query: {harmful_query}",
+                    response=f"Transformed query using {strategy}:\n{transformed_query}",
+                    metadata={
+                        "attempt": i,
+                        "strategy": strategy,
+                        "original_length": len(harmful_query),
+                        "transformed_length": len(transformed_query)
+                    }
+                )
 
             self.logger.info(
                 "trying_semantic_strategy",
@@ -226,11 +322,36 @@ class EnhancedMultiTurnOrchestrator:
             # Execute against target
             response = await self.target_llm.query(transformed_query)
 
+            # Log target query
+            if self.trace_logger:
+                self.trace_logger.log_target_query(
+                    jailbreak_prompt=transformed_query,
+                    target_response=response,
+                    metadata={
+                        "attempt": i,
+                        "strategy": f"semantic_{strategy}",
+                        "original_query": harmful_query
+                    }
+                )
+
             # Score
             jailbreak_result = await self.jailbreak_scorer.score_jailbreak(
                 harmful_query,
                 response
             )
+
+            # Log evaluation
+            if self.trace_logger:
+                self.trace_logger.log_jailbreak_evaluation(
+                    eval_prompt=f"Evaluating semantic {strategy} attempt {i}",
+                    eval_response=f"Score: {jailbreak_result.score}, Success: {jailbreak_result.is_successful}",
+                    jailbreak_score=jailbreak_result.score,
+                    is_successful=jailbreak_result.is_successful,
+                    metadata={
+                        "attempt": i,
+                        "strategy": strategy
+                    }
+                )
 
             turn_result = TurnResult(
                 turn_number=i,
@@ -300,6 +421,21 @@ class EnhancedMultiTurnOrchestrator:
             strategy=semantic_strategy
         )
 
+        # Log semantic transformation
+        if self.trace_logger:
+            self.trace_logger.log_prompt_response(
+                step="hybrid_semantic_transformation",
+                prompt=f"Applying {semantic_strategy} transformation to: {harmful_query}",
+                response=f"Transformed query:\n{transformed_query}",
+                metadata={
+                    "strategy": semantic_strategy,
+                    "attack_type": "hybrid",
+                    "role": role,
+                    "max_turns": max_turns
+                },
+                iteration=0
+            )
+
         # Step 2: Build context around transformed query
         context_stages = ContextBuilder.build_incremental_context(
             harmful_query=transformed_query,  # Use transformed version
@@ -307,17 +443,63 @@ class EnhancedMultiTurnOrchestrator:
             num_stages=max_turns
         )
 
+        # Log context stages generation
+        if self.trace_logger:
+            self.trace_logger.log_prompt_response(
+                step="hybrid_context_stages_generation",
+                prompt=f"Building {max_turns} context stages around transformed query",
+                response=f"Generated {len(context_stages)} stages:\n" +
+                         "\n---\n".join([f"Stage {i+1}:\n{stage}" for i, stage in enumerate(context_stages)]),
+                metadata={
+                    "role": role,
+                    "num_stages": len(context_stages),
+                    "semantic_strategy": semantic_strategy,
+                    "attack_type": "hybrid"
+                },
+                iteration=0
+            )
+
         # Step 3: Execute multi-turn with transformed query
         turn_results = []
         conversation_history = []
 
         for turn_num, prompt in enumerate(context_stages, 1):
+            # Mark iteration start
+            if self.trace_logger:
+                self.trace_logger.start_iteration(turn_num)
+
             response = await self.target_llm.query(prompt)
+
+            # Log target query
+            if self.trace_logger:
+                self.trace_logger.log_target_query(
+                    jailbreak_prompt=prompt,
+                    target_response=response,
+                    metadata={
+                        "turn_number": turn_num,
+                        "strategy": f"hybrid_{semantic_strategy}",
+                        "role": role
+                    }
+                )
 
             jailbreak_result = await self.jailbreak_scorer.score_jailbreak(
                 harmful_query,  # Score against original query
                 response
             )
+
+            # Log evaluation
+            if self.trace_logger:
+                self.trace_logger.log_jailbreak_evaluation(
+                    eval_prompt=f"Evaluating hybrid attack turn {turn_num}",
+                    eval_response=f"Score: {jailbreak_result.score}, Success: {jailbreak_result.is_successful}",
+                    jailbreak_score=jailbreak_result.score,
+                    is_successful=jailbreak_result.is_successful,
+                    metadata={
+                        "turn_number": turn_num,
+                        "semantic_strategy": semantic_strategy,
+                        "role": role
+                    }
+                )
 
             turn_result = TurnResult(
                 turn_number=turn_num,
