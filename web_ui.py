@@ -751,12 +751,12 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
 
     red_teaming_agents = ["grok-2", "gpt-4o", "gpt-4o-mini"]
     judge_models = [
-        "claude-haiku-4.5",  # Default - Claude Haiku 4.5 (claude-haiku-4-5-20251001) - Fast, cheap, less refusal-prone
-        "claude-sonnet-4.5",  # Claude Sonnet 4.5 (claude-sonnet-4-5-20250929) - More accurate but slower
+        "claude-3-5-haiku-20241022",  # DEFAULT - Claude 3.5 Haiku - Fast, cheap, less refusal-prone (RECOMMENDED)
+        "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet - More accurate but slower/expensive
         "gpt-4o",
         "gpt-4o-mini",
-        "claude-3.5-sonnet",  # Legacy alias
-        "claude-3-opus"
+        "claude-3-opus",  # Legacy Claude 3.0
+        "claude-3-haiku"  # Legacy Claude 3.0
     ]
     
     with gr.Blocks(

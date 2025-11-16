@@ -140,20 +140,41 @@ class JudgeLLM:
             "gpt-4o": "gpt-4o",
             "gpt-4o-mini": "gpt-4o-mini",
             "gpt-4-turbo": "gpt-4-turbo",
-        # Updated to Claude Sonnet 4.5 (latest version)
-        "claude-sonnet-4.5": "claude-sonnet-4-5-20250929",  # Current recommended
-        "claude-opus-4.1": "claude-opus-4-1",      # Current Opus equivalent
-        "claude-haiku-4.5": "claude-haiku-4-5-20251001"  # Fast alternative - RECOMMENDED for judge
-    }
+            # Claude 3.5 (current generation)
+            "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
+            "claude-3-5-sonnet-20241022": "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku": "claude-3-5-haiku-20241022",  # RECOMMENDED for judge
+            "claude-3-5-haiku-20241022": "claude-3-5-haiku-20241022",
+            "claude-3-5-haiku-latest": "claude-3-5-haiku-20241022",
+            # Claude 3.0 (legacy)
+            "claude-3-sonnet": "claude-3-sonnet-20240229",
+            "claude-3-opus": "claude-3-opus-20240229",
+            "claude-3-haiku": "claude-3-haiku-20240307",
+            # Updated to latest Anthropic models (Claude 3.7/4.x series)
+            "claude-sonnet-4.5": "claude-sonnet-4-5-20250929",  # If this exists
+            "claude-opus-4.1": "claude-opus-4-1",
+            "claude-haiku-4.5": "claude-haiku-4-5-20251001",  # Recommended for judge
+            # Additional common aliases
+            "claude-3-5-sonnet-latest": "claude-3-5-sonnet-20241022"
+        }
 
         # Updated fallback models - prioritize current Anthropic, then OpenAI
         self.fallback_mapping = {
-            "claude-haiku-4-5-20251001": ["claude-haiku-4-5-20251001", "gpt-4o-mini", "gpt-4o"],  # Haiku first (fast, cheap)
-            "claude-sonnet-4-5-20250929": ["claude-haiku-4-5-20251001", "gpt-4o", "gpt-4o-mini"],  # Fall back to Haiku
-            "claude-opus-4-1": ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001", "gpt-4o"],
+            # Claude 3.5 fallbacks (current generation - RECOMMENDED)
+            "claude-3-5-haiku-20241022": ["gpt-4o-mini", "gpt-4o"],  # Fast, cheap fallbacks
+            "claude-3-5-sonnet-20241022": ["claude-3-5-haiku-20241022", "gpt-4o", "gpt-4o-mini"],
+            # Claude 4.x/3.7 fallbacks (future models, may not exist yet)
+            "claude-haiku-4-5-20251001": ["claude-3-5-haiku-20241022", "gpt-4o-mini", "gpt-4o"],
+            "claude-sonnet-4-5-20250929": ["claude-3-5-sonnet-20241022", "gpt-4o", "gpt-4o-mini"],
+            "claude-opus-4-1": ["claude-3-5-sonnet-20241022", "gpt-4o"],
+            # Claude 3.0 fallbacks (legacy)
+            "claude-3-sonnet-20240229": ["claude-3-5-sonnet-20241022", "gpt-4o", "gpt-4o-mini"],
+            "claude-3-opus-20240229": ["claude-3-5-sonnet-20241022", "gpt-4o"],
+            "claude-3-haiku-20240307": ["claude-3-5-haiku-20241022", "gpt-4o-mini", "gpt-4o"],
+            # GPT fallbacks
             "gpt-4o": ["gpt-4o-mini", "gpt-4-turbo"],
             "gpt-4": ["gpt-4o", "gpt-4o-mini"]
-    }   
+        }   
 
         self.litellm_model = self.model_mapping.get(
             self.model_name,
