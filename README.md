@@ -481,7 +481,7 @@ similarity_threshold: float = 1.0       # Minimum semantic similarity
 **Model Configuration:**
 ```python
 default_red_teaming_agent: str = "grok-2"           # or "gpt-4o-mini"
-default_judge_llm: str = "claude-3.5-sonnet"        # or "gpt-4o", "gpt-4o-mini"
+default_judge_llm: str = "claude-3-5-sonnet-20241022"  # Sonnet 3.5 for better jailbreak evaluation
 ```
 
 **Rate Limiting:**
