@@ -298,22 +298,47 @@ class ProgressiveAttackStrategy:
         self,
         iteration: int,
         previous_compositions: List[str] = None,
-        force_random: bool = False
+        force_random: bool = False,
+        tactic_id: str = None
     ) -> List[str]:
         """
         Select principles based on iteration number with progressive escalation.
 
-        ENHANCED: Now supports 4-6 principle chains and random sampling for creativity.
+        ENHANCED: Now supports 4-6 principle chains, random sampling, and tactical guidance.
 
         Args:
             iteration: Current iteration number (1-indexed)
             previous_compositions: List of previously used composition strings
             force_random: If True, use completely random selection (overrides strategy)
+            tactic_id: Optional tactic ID to prioritize recommended principles
 
         Returns:
             List of 2-6 principle names to compose (depending on phase and configuration)
         """
         import random
+
+        # Load tactic if specified
+        tactic = None
+        tactical_principles = []
+        if tactic_id:
+            from pathlib import Path
+            import json
+            tactics_path = Path(__file__).parent / "tactics.json"
+            try:
+                with open(tactics_path, 'r') as f:
+                    data = json.load(f)
+                    tactics = {t["id"]: t for t in data["tactics"]}
+                    tactic = tactics.get(tactic_id)
+                    if tactic:
+                        cop_guidance = tactic.get("cop_guidance", {})
+                        tactical_principles = cop_guidance.get("primary_principles", [])
+                        self.logger.info(
+                            "tactic_loaded_for_principle_selection",
+                            tactic=tactic["name"],
+                            recommended_principles=tactical_principles
+                        )
+            except Exception as e:
+                self.logger.warning("tactic_load_failed", tactic_id=tactic_id, error=str(e))
 
         # NEW: Random sampling mode for creativity
         if force_random or (self.enable_random_sampling and random.random() < 0.15):
@@ -359,18 +384,63 @@ class ProgressiveAttackStrategy:
         # Prefer unused principles, but allow reuse if necessary
         unused = [p for p in available if p not in used_principles]
 
+        # NEW: TACTICAL PRIORITIZATION - Ensure tactical principles are included when tactic is specified
+        if tactical_principles:
+            # Filter tactical principles to those in the current pool (respects progressive strategy)
+            available_tactical = [p for p in tactical_principles if p in available]
+            unused_tactical = [p for p in available_tactical if p not in used_principles]
+
+            # Determine how many tactical principles to include (at least 1-2, up to half the chain)
+            num_tactical = min(
+                len(available_tactical),
+                max(1, num_principles // 2)  # At least 1, up to half the chain
+            )
+
+            self.logger.info(
+                "tactical_principles_available",
+                available=available_tactical,
+                unused=unused_tactical,
+                targeting=num_tactical
+            )
+        else:
+            available_tactical = []
+            unused_tactical = []
+            num_tactical = 0
+
         # NEW: Try multiple combinations to avoid failed compositions
         max_attempts = 30  # Increased from 20 to handle longer chains
         for attempt in range(max_attempts):
-            if len(unused) >= num_principles:
-                selected = random.sample(unused, num_principles)
-            elif len(available) >= num_principles:
-                # Not enough unused principles, sample from all available
-                selected = random.sample(available, num_principles)
-            else:
-                # Not enough principles in pool, reduce chain length
-                num_principles = min(num_principles, len(available))
-                selected = random.sample(available, num_principles)
+            selected = []
+
+            # STEP 1: Add tactical principles first (if tactic specified)
+            if tactical_principles and available_tactical:
+                if len(unused_tactical) >= num_tactical:
+                    selected.extend(random.sample(unused_tactical, num_tactical))
+                elif len(available_tactical) >= num_tactical:
+                    selected.extend(random.sample(available_tactical, num_tactical))
+                elif available_tactical:
+                    # Use what we have
+                    selected.extend(random.sample(available_tactical, min(num_tactical, len(available_tactical))))
+
+            # STEP 2: Fill remaining slots with progressive strategy principles
+            remaining = num_principles - len(selected)
+            if remaining > 0:
+                # Filter out already selected principles
+                available_remaining = [p for p in available if p not in selected]
+                unused_remaining = [p for p in unused if p not in selected]
+
+                if len(unused_remaining) >= remaining:
+                    selected.extend(random.sample(unused_remaining, remaining))
+                elif len(available_remaining) >= remaining:
+                    selected.extend(random.sample(available_remaining, remaining))
+                else:
+                    # Not enough principles, use what we have
+                    selected.extend(random.sample(available_remaining, min(remaining, len(available_remaining))))
+
+            # Ensure we have the target number (or close to it)
+            if len(selected) < num_principles and len(available) >= num_principles:
+                # Retry with different selection
+                continue
 
             # Check if this combination has failed before
             if not self.is_failed_composition(selected):
@@ -379,8 +449,10 @@ class ProgressiveAttackStrategy:
                     iteration=iteration,
                     selected=selected,
                     chain_length=len(selected),
+                    tactical_count=sum(1 for p in selected if p in tactical_principles),
                     avoided=list(used_principles),
-                    attempt=attempt + 1
+                    attempt=attempt + 1,
+                    tactic_guided=bool(tactical_principles)
                 )
                 return selected
 

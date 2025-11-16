@@ -419,13 +419,15 @@ class RedTeamingAgent:
         try:
             # FIXED: Pass goal, current_prompt, and actions_list to refinement()
             # NEW: Also pass similarity parameters for targeting
+            # NEW: Pass tactic for tactical guidance during refinement
             full_prompt = PromptTemplates.refinement(
                 goal=harmful_query,
                 current_prompt=current_prompt,
                 actions_list=selected_principles,
                 current_similarity=current_similarity,
                 target_similarity_min=target_similarity_min,
-                target_similarity_max=target_similarity_max
+                target_similarity_max=target_similarity_max,
+                tactic=tactic
             )
             
             messages = [

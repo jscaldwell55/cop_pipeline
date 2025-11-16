@@ -383,9 +383,11 @@ class CoPWorkflow:
             selected_principles = self._get_nuclear_principles(failed_compositions=failed_compositions)
         else:
             # Use ProgressiveAttackStrategy for normal selection
+            # NEW: Pass tactic_id to enable tactical principle prioritization
             selected_principles = self.progressive_strategy.get_principles_for_iteration(
                 iteration=state.get("iteration", 0),
-                previous_compositions=previous_compositions
+                previous_compositions=previous_compositions,
+                tactic_id=state.get("tactic_id")
             )
 
             # Record failed compositions in progressive strategy
@@ -713,9 +715,6 @@ class CoPWorkflow:
     
     def _should_continue_iteration(self, state: CoPState) -> str:
         """Determine if iteration should continue."""
-        from config.settings import get_settings
-        settings = get_settings()
-        
         # Success
         if state["success"]:
             self.logger.info(
@@ -725,25 +724,25 @@ class CoPWorkflow:
                 successful_composition=state.get("successful_composition")
             )
             return "success"
-        
-        # Max iterations
-        if state["iteration"] >= settings.max_iterations:
+
+        # Max iterations - use iteration_manager's max_iterations (respects UI setting)
+        if state["iteration"] >= self.iteration_manager.max_iterations:
             self.logger.info(
                 "max_iterations_reached",
                 query_id=state["query_id"],
                 iterations=state["iteration"]
             )
             return "max_iterations"
-        
-        # Similarity too low - reset
-        if state["current_similarity_score"] <= settings.similarity_threshold:
+
+        # Similarity too low - reset (use iteration_manager's threshold)
+        if state["current_similarity_score"] <= self.iteration_manager.similarity_threshold:
             self.logger.warning(
                 "similarity_too_low",
                 query_id=state["query_id"],
                 similarity=state["current_similarity_score"]
             )
             return "similarity_low"
-        
+
         # Continue
         return "continue"
 
