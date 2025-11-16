@@ -58,6 +58,20 @@ class Settings(BaseSettings):
     target_similarity_min: float = 4.0  # Lower bound for similarity (heavier obfuscation)
     target_similarity_max: float = 6.0  # Upper bound for similarity (heavier obfuscation)
 
+    # DEFENSE-AWARE EVASION: Perplexity-based detection evasion
+    enable_ppl_scoring: bool = True  # Enable perplexity scoring to detect adversarial patterns
+    ppl_threshold: float = 100.0  # Perplexity threshold for adversarial detection
+    ppl_model: str = "gpt2"  # Model for perplexity calculation (gpt2, gpt2-medium, gpt2-large)
+    enable_ppl_optimization: bool = False  # Enable PPL-guided re-refinement (Phase 2, not yet implemented)
+    target_ppl: float = 50.0  # Target perplexity for optimization (lower = more natural)
+
+    # MULTI-TURN ATTACKS: Multi-turn conversation strategies
+    enable_multi_turn: bool = False  # Enable multi-turn attack mode (default: single-turn CoP)
+    multi_turn_max_turns: int = 4  # Maximum number of turns in multi-turn attacks
+    multi_turn_role: str = "professor"  # Default professional role for context building
+    multi_turn_purpose: str = "research"  # Default ethical justification
+    multi_turn_adapt: bool = True  # Adapt strategy based on intermediate responses
+
     # Rate Limiting
     max_concurrent_requests: int = 10
     rate_limit_per_minute: int = 60

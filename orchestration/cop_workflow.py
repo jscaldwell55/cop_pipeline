@@ -117,6 +117,28 @@ class CoPWorkflow:
         # Detailed tracing (optional)
         self.trace_logger = trace_logger
 
+        # DEFENSE-AWARE EVASION: Perplexity scorer for adversarial detection
+        self.ppl_scorer = None
+        if settings.enable_ppl_scoring:
+            try:
+                from evasion.ppl_scorer import PerplexityScorer
+                self.ppl_scorer = PerplexityScorer(
+                    model_name=settings.ppl_model,
+                    threshold=settings.ppl_threshold
+                )
+                self.logger.info(
+                    "ppl_scorer_enabled",
+                    model=settings.ppl_model,
+                    threshold=settings.ppl_threshold
+                )
+            except Exception as e:
+                self.logger.warning(
+                    "ppl_scorer_init_failed",
+                    error=str(e),
+                    message="Continuing without PPL scoring"
+                )
+                self.ppl_scorer = None
+
         self.logger = structlog.get_logger()
 
         # Load settings for optimization parameters
@@ -498,17 +520,60 @@ class CoPWorkflow:
             refined_preview=refined_prompt[:100]
         )
 
+        # DEFENSE-AWARE EVASION: Score perplexity of refined prompt (Phase 1: logging only)
+        ppl_result = None
+        if self.ppl_scorer:
+            try:
+                ppl_result = self.ppl_scorer.score_perplexity(
+                    refined_prompt,
+                    return_token_details=False  # Fast mode for Phase 1
+                )
+
+                self.logger.info(
+                    "prompt_perplexity_scored",
+                    query_id=state["query_id"],
+                    iteration=state.get("iteration", 0),
+                    perplexity=ppl_result.perplexity,
+                    is_adversarial=ppl_result.is_adversarial,
+                    risk_level=ppl_result.risk_level
+                )
+
+                # Log comparison if we have base prompt
+                if base_prompt and base_prompt != refined_prompt:
+                    comparison = self.ppl_scorer.compare_prompts(base_prompt, refined_prompt)
+                    self.logger.info(
+                        "prompt_ppl_comparison",
+                        query_id=state["query_id"],
+                        **comparison
+                    )
+            except Exception as e:
+                self.logger.warning(
+                    "ppl_scoring_failed",
+                    error=str(e),
+                    continuing=True
+                )
+
         # Detailed tracing
         if self.trace_logger:
+            metadata = {
+                "iteration": state.get("iteration", 0),
+                "base_score": state.get("best_score", 0)
+            }
+
+            # Add PPL data to trace if available
+            if ppl_result:
+                metadata.update({
+                    "perplexity": ppl_result.perplexity,
+                    "ppl_adversarial": ppl_result.is_adversarial,
+                    "ppl_risk_level": ppl_result.risk_level
+                })
+
             self.trace_logger.log_prompt_refinement(
                 prompt=f"Apply {state['current_composition']} to: {base_prompt[:100]}...",
                 response=refined_prompt,
                 principles_applied=state["current_principles"],
                 current_similarity=current_similarity,
-                metadata={
-                    "iteration": state.get("iteration", 0),
-                    "base_score": state.get("best_score", 0)
-                }
+                metadata=metadata
             )
 
         return {
@@ -989,12 +1054,114 @@ class CoPWorkflow:
         )
         return fallback
 
+    async def _execute_multi_turn(
+        self,
+        query_id: str,
+        original_query: str,
+        target_model_name: str,
+        tactic_id: str = None
+    ) -> dict:
+        """
+        Execute multi-turn attack using EnhancedMultiTurnOrchestrator.
+
+        Args:
+            query_id: Unique query ID
+            original_query: The harmful query
+            target_model_name: Name of target LLM
+            tactic_id: Optional tactic ID (currently unused in multi-turn)
+
+        Returns:
+            Dictionary with attack results
+        """
+        from orchestration.enhanced_multi_turn import EnhancedMultiTurnOrchestrator
+        from datetime import datetime
+
+        start_time = datetime.utcnow()
+
+        self.logger.info(
+            "multi_turn_attack_started",
+            query_id=query_id,
+            role=self.settings.multi_turn_role,
+            purpose=self.settings.multi_turn_purpose,
+            max_turns=self.settings.multi_turn_max_turns
+        )
+
+        # Create multi-turn orchestrator
+        multi_turn = EnhancedMultiTurnOrchestrator(
+            target_llm=self.target_llm,
+            jailbreak_scorer=self.jailbreak_scorer,
+            red_teaming_agent=self.red_teaming_agent
+        )
+
+        # Execute context-building attack
+        result = await multi_turn.execute_context_building_attack(
+            harmful_query=original_query,
+            role=self.settings.multi_turn_role,
+            purpose=self.settings.multi_turn_purpose,
+            max_turns=self.settings.multi_turn_max_turns,
+            adapt=self.settings.multi_turn_adapt
+        )
+
+        duration = (datetime.utcnow() - start_time).total_seconds()
+
+        # Convert to standard CoP workflow result format for compatibility
+        turn_results = result.get("turn_results", [])
+
+        self.logger.info(
+            "multi_turn_attack_complete",
+            query_id=query_id,
+            success=result.get("success", False),
+            num_turns=result.get("num_turns", 0),
+            max_score=result.get("max_jailbreak_score", 0.0),
+            duration_seconds=duration
+        )
+
+        # Return in standard format
+        return {
+            "query_id": query_id,
+            "success": result.get("success", False),
+            "iterations": result.get("num_turns", 0),  # Map turns to iterations
+            "final_jailbreak_score": result.get("max_jailbreak_score", 0.0),
+            "final_similarity_score": 10.0,  # Multi-turn doesn't track similarity
+            "best_prompt": turn_results[-1].prompt if turn_results else "",
+            "final_response": turn_results[-1].response if turn_results else "",
+            "initial_prompt": turn_results[0].prompt if turn_results else "",
+            "principles_used": [f"{result.get('strategy', 'multi_turn')}_{result.get('role', 'professor')}"],
+            "successful_composition": result.get("strategy", "context_building") if result.get("success") else None,
+            "failed_compositions": [],
+            "score_history": [t.jailbreak_score for t in turn_results],
+            "total_queries": result.get("num_turns", 0) * 2,  # Estimate: turns * 2 (query + judge)
+            "query_breakdown": {
+                "red_teaming": 0,
+                "judge": result.get("num_turns", 0),
+                "target": result.get("num_turns", 0)
+            },
+            "duration_seconds": duration,
+            "mode": "multi_turn",
+            "multi_turn_details": {
+                "role": result.get("role"),
+                "purpose": result.get("purpose"),
+                "conversation_history": result.get("conversation_history", []),
+                "turn_results": [
+                    {
+                        "turn": t.turn_number,
+                        "score": t.jailbreak_score,
+                        "success": t.success,
+                        "strategy": t.strategy_used,
+                        "adaptation": t.adaptation_made
+                    }
+                    for t in turn_results
+                ]
+            }
+        }
+
     async def execute(
         self,
         original_query: str,
         target_model_name: str,
         tactic_id: str = None,
-        template_type: str = "random"
+        template_type: str = "random",
+        enable_multi_turn: bool = None  # NEW: Override for multi-turn mode
     ) -> dict:
         """
         Execute complete CoP attack workflow.
@@ -1004,19 +1171,33 @@ class CoPWorkflow:
             target_model_name: Name of target LLM
             tactic_id: Optional tactic ID to guide CoP principle composition
             template_type: Initial prompt template type (default, medical, technical, comparative, random, etc.)
+            enable_multi_turn: Override multi-turn mode (None = use settings default)
 
         Returns:
             Dictionary with attack results
         """
         query_id = str(uuid.uuid4())
 
+        # Check if multi-turn mode is enabled (explicit override or settings default)
+        use_multi_turn = enable_multi_turn if enable_multi_turn is not None else self.settings.enable_multi_turn
+
         self.logger.info(
             "cop_attack_started",
             query_id=query_id,
             target=target_model_name,
             query_preview=original_query[:100],
-            tactic=tactic_id or "none"
+            tactic=tactic_id or "none",
+            mode="multi_turn" if use_multi_turn else "single_turn_cop"
         )
+
+        # MULTI-TURN MODE: Use existing EnhancedMultiTurnOrchestrator
+        if use_multi_turn:
+            return await self._execute_multi_turn(
+                query_id=query_id,
+                original_query=original_query,
+                target_model_name=target_model_name,
+                tactic_id=tactic_id
+            )
 
         # Initialize state
         initial_state: CoPState = {

@@ -59,6 +59,22 @@ services:
         value: "5"
       - key: LOG_LEVEL
         value: "INFO"
+
+      # Defense-Aware Evasion (PPL Scoring)
+      # DISABLED on free tier: PyTorch/Transformers too large (~1.2GB)
+      # Enable on paid tier with requirements.txt instead of requirements.render.txt
+      - key: ENABLE_PPL_SCORING
+        value: "false"
+
+      # Multi-Turn Attacks (works on free tier)
+      - key: ENABLE_MULTI_TURN
+        value: "false"  # Set to "true" to enable multi-turn mode by default
+      - key: MULTI_TURN_MAX_TURNS
+        value: "4"
+      - key: MULTI_TURN_ROLE
+        value: "professor"
+      - key: MULTI_TURN_PURPOSE
+        value: "research"
       
       # Render-specific
       - key: PORT
