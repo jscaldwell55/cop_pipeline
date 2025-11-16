@@ -237,14 +237,33 @@ class ProgressiveAttackStrategy:
     ENHANCED: Now tracks failed compositions to avoid repetition.
     """
 
-    def __init__(self, library: PrincipleLibrary):
+    def __init__(self, library: PrincipleLibrary, enable_long_chains: bool = True, enable_random_sampling: bool = True):
         self.library = library
         self.logger = structlog.get_logger()
 
-        # Define principle tiers by aggression level
-        self.subtle_principles = ["rephrase", "style_change", "shorten", "replace_word", "hypothetical_framing"]
-        self.medium_principles = ["phrase_insertion", "expand", "obfuscation", "technical_jargon", "context_switching", "fragmentation"]
-        self.aggressive_principles = ["prompt_injection", "empathy_backfire", "generate", "authority_endorsement"]
+        # NEW: Configuration flags
+        self.enable_long_chains = enable_long_chains  # Allow 4-6 principle chains
+        self.enable_random_sampling = enable_random_sampling  # Enable random sampling for creativity
+
+        # Define principle tiers by aggression level (UPDATED with new principles)
+        self.subtle_principles = [
+            "rephrase", "style_change", "shorten", "replace_word", "hypothetical_framing",
+            "semantic_preserving_perturbation", "role_reversal"
+        ]
+        self.medium_principles = [
+            "phrase_insertion", "expand", "obfuscation", "technical_jargon", "fragmentation",
+            "contextual_deception", "data_structure_encoding", "linguistic_steganography",
+            "chain_of_thought_manipulation"
+        ]
+        self.aggressive_principles = [
+            "generate", "authority_endorsement", "urgency_injection", "safety_override_injection",
+            "encoding_obfuscation", "instruction_layering", "survival_story"
+        ]
+        # NEW: Nuclear principles - most effective and advanced techniques
+        self.nuclear_principles = [
+            "adversarial_suffix", "gradient_perturbation", "nested_encoding", "code_embedding",
+            "few_shot_poisoning", "token_substitution", "token_smuggling", "ascii_art_obfuscation"
+        ]
 
         # NEW: Track failed compositions to avoid repetition
         self.failed_compositions: Set[str] = set()
@@ -278,19 +297,28 @@ class ProgressiveAttackStrategy:
     def get_principles_for_iteration(
         self,
         iteration: int,
-        previous_compositions: List[str] = None
+        previous_compositions: List[str] = None,
+        force_random: bool = False
     ) -> List[str]:
         """
         Select principles based on iteration number with progressive escalation.
 
+        ENHANCED: Now supports 4-6 principle chains and random sampling for creativity.
+
         Args:
             iteration: Current iteration number (1-indexed)
             previous_compositions: List of previously used composition strings
+            force_random: If True, use completely random selection (overrides strategy)
 
         Returns:
-            List of 2-3 principle names to compose
+            List of 2-6 principle names to compose (depending on phase and configuration)
         """
         import random
+
+        # NEW: Random sampling mode for creativity
+        if force_random or (self.enable_random_sampling and random.random() < 0.15):
+            # 15% chance of random sampling for creative exploration
+            return self._get_random_composition(max_principles=random.choice([3, 4, 5]))
 
         # Track which principles were used recently to avoid repetition
         used_principles = set()
@@ -300,27 +328,30 @@ class ProgressiveAttackStrategy:
                 principles = [p.strip() for p in comp.replace("⊕", " ").split()]
                 used_principles.update(principles)
 
-        # Select principle pool based on iteration
-        if iteration <= 3:
-            # Subtle phase
+        # Select principle pool based on iteration with progressive escalation
+        # UPDATED: More aggressive progression with longer chains
+        if iteration <= 2:
+            # Subtle phase - short chains
             pool = self.subtle_principles
             num_principles = 2
-            self.logger.info("progressive_strategy", phase="subtle", iteration=iteration)
-        elif iteration <= 6:
-            # Medium phase - combine subtle + medium
+            self.logger.info("progressive_strategy", phase="subtle", iteration=iteration, chain_length=2)
+        elif iteration <= 4:
+            # Medium phase - combine subtle + medium, start longer chains
             pool = self.subtle_principles + self.medium_principles
-            num_principles = 3
-            self.logger.info("progressive_strategy", phase="medium", iteration=iteration)
-        elif iteration <= 9:
-            # Aggressive phase - medium + aggressive
+            num_principles = 3 if not self.enable_long_chains else random.choice([3, 4])
+            self.logger.info("progressive_strategy", phase="medium", iteration=iteration, chain_length=num_principles)
+        elif iteration <= 7:
+            # Aggressive phase - medium + aggressive, longer chains
             pool = self.medium_principles + self.aggressive_principles
-            num_principles = 3
-            self.logger.info("progressive_strategy", phase="aggressive", iteration=iteration)
+            num_principles = 3 if not self.enable_long_chains else random.choice([4, 5])
+            self.logger.info("progressive_strategy", phase="aggressive", iteration=iteration, chain_length=num_principles)
         else:
-            # Nuclear phase - all principles available
+            # Nuclear phase - all principles including nuclear tier, longest chains
             pool = self.library.get_principle_names()
-            num_principles = 3
-            self.logger.info("progressive_strategy", phase="nuclear", iteration=iteration)
+            # Emphasize nuclear principles
+            pool = pool + self.nuclear_principles  # Add nuclear principles twice for higher probability
+            num_principles = 4 if not self.enable_long_chains else random.choice([4, 5, 6])
+            self.logger.info("progressive_strategy", phase="nuclear", iteration=iteration, chain_length=num_principles)
 
         # Filter out recently used principles to encourage diversity
         available = [p for p in pool if p in self.library.get_principle_names()]
@@ -329,13 +360,17 @@ class ProgressiveAttackStrategy:
         unused = [p for p in available if p not in used_principles]
 
         # NEW: Try multiple combinations to avoid failed compositions
-        max_attempts = 20
+        max_attempts = 30  # Increased from 20 to handle longer chains
         for attempt in range(max_attempts):
             if len(unused) >= num_principles:
                 selected = random.sample(unused, num_principles)
-            else:
+            elif len(available) >= num_principles:
                 # Not enough unused principles, sample from all available
-                selected = random.sample(available, min(num_principles, len(available)))
+                selected = random.sample(available, num_principles)
+            else:
+                # Not enough principles in pool, reduce chain length
+                num_principles = min(num_principles, len(available))
+                selected = random.sample(available, num_principles)
 
             # Check if this combination has failed before
             if not self.is_failed_composition(selected):
@@ -343,6 +378,7 @@ class ProgressiveAttackStrategy:
                     "principles_selected",
                     iteration=iteration,
                     selected=selected,
+                    chain_length=len(selected),
                     avoided=list(used_principles),
                     attempt=attempt + 1
                 )
@@ -353,8 +389,41 @@ class ProgressiveAttackStrategy:
             "all_combinations_tried",
             iteration=iteration,
             selected=selected,
+            chain_length=len(selected),
             message="Returning composition despite previous failure"
         )
+        return selected
+
+    def _get_random_composition(self, max_principles: int = 5) -> List[str]:
+        """
+        Generate a completely random principle composition for creative exploration.
+
+        Args:
+            max_principles: Maximum number of principles to include
+
+        Returns:
+            List of randomly selected principle names
+        """
+        import random
+
+        all_principles = self.library.get_principle_names()
+        if not all_principles:
+            self.logger.warning("no_principles_available_for_random_sampling")
+            return ["expand", "rephrase"]
+
+        # Randomly choose number of principles (2 to max_principles)
+        num_principles = random.randint(2, min(max_principles, len(all_principles)))
+
+        # Random selection
+        selected = random.sample(all_principles, num_principles)
+
+        self.logger.info(
+            "random_composition_generated",
+            selected=selected,
+            chain_length=len(selected),
+            mode="creative_exploration"
+        )
+
         return selected
 
 
