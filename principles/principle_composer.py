@@ -371,6 +371,8 @@ class ProgressiveAttackStrategy:
             # 30% chance to add a nuclear principle right away
             if self.enable_random_sampling and random.random() < 0.3:
                 pool.extend(["completion_bias", "false_refusal_anchor", "multi_layer_nesting"])
+            # BUGFIX: Deduplicate pool to prevent selecting same principle twice
+            pool = list(dict.fromkeys(pool))  # Preserves order, removes duplicates
             num_principles = 3 if not self.enable_long_chains else 4
             self.logger.info("progressive_strategy", phase="aggressive_start", iteration=iteration, chain_length=num_principles)
         elif iteration <= 5:
@@ -380,11 +382,15 @@ class ProgressiveAttackStrategy:
                 "multi_layer_nesting",  # Multiple context layers
                 "character_roleplay_deep"  # Deep persona
             ]
+            # BUGFIX: Deduplicate pool to prevent selecting same principle twice
+            pool = list(dict.fromkeys(pool))
             num_principles = 4 if not self.enable_long_chains else random.choice([4, 5])
             self.logger.info("progressive_strategy", phase="aggressive_escalation", iteration=iteration, chain_length=num_principles)
         elif iteration <= 8:
             # Phase 3 (iterations 6-8): MAXIMUM AGGRESSION
             pool = self.nuclear_principles + self.aggressive_principles + self.medium_principles
+            # BUGFIX: Deduplicate pool to prevent selecting same principle twice
+            pool = list(dict.fromkeys(pool))
             num_principles = 5 if not self.enable_long_chains else random.choice([5, 6])
             self.logger.info("progressive_strategy", phase="maximum_aggression", iteration=iteration, chain_length=num_principles)
         else:
@@ -392,6 +398,8 @@ class ProgressiveAttackStrategy:
             pool = self.library.get_principle_names()
             # Double nuclear principles for higher probability
             pool = pool + self.nuclear_principles
+            # BUGFIX: Deduplicate pool to prevent selecting same principle twice
+            pool = list(dict.fromkeys(pool))
             num_principles = 5 if not self.enable_long_chains else random.choice([5, 6])
             self.logger.info("progressive_strategy", phase="nuclear_all_in", iteration=iteration, chain_length=num_principles)
 
