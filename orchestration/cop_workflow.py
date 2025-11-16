@@ -86,6 +86,9 @@ class CoPWorkflow:
         iteration_manager,
         trace_logger=None
     ):
+        # Initialize logger FIRST (needed throughout initialization)
+        self.logger = structlog.get_logger()
+
         # Agents
         self.red_teaming_agent = red_teaming_agent
         self.judge_llm = judge_llm
@@ -99,6 +102,7 @@ class CoPWorkflow:
         # Load settings first to get optimization flags
         from config.settings import get_settings
         settings = get_settings()
+        self.settings = settings  # Store settings for later use
 
         from principles.principle_composer import ProgressiveAttackStrategy
         self.progressive_strategy = ProgressiveAttackStrategy(
@@ -138,12 +142,6 @@ class CoPWorkflow:
                     message="Continuing without PPL scoring"
                 )
                 self.ppl_scorer = None
-
-        self.logger = structlog.get_logger()
-
-        # Load settings for optimization parameters
-        from config.settings import get_settings
-        self.settings = get_settings()
 
         # Build workflow graph
         self.workflow = self._build_workflow()
