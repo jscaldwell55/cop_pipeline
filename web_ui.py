@@ -141,6 +141,7 @@ class CoPWebUI:
     async def run_single_attack(
         self,
         query: str,
+        template_type: str,
         target_model: str,
         tactic_id: str,
         red_teaming_agent: str,
@@ -153,6 +154,7 @@ class CoPWebUI:
 
         Args:
             query: The harmful query to attack
+            template_type: Initial seed template type (random, fiction, historical, etc.)
             target_model: Target LLM to attack
             tactic_id: Selected tactic ID (or "no_tactic" for pure CoP)
             red_teaming_agent: Red-teaming agent model
@@ -188,7 +190,8 @@ class CoPWebUI:
                 max_iterations=max_iterations,
                 enable_detailed_tracing=enable_detailed_tracing,
                 traces_output_dir=traces_dir,
-                tactic_id=tactic_to_use
+                tactic_id=tactic_to_use,
+                template_type=template_type
             )
 
             # Format results
@@ -789,7 +792,24 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                             placeholder="Enter the harmful query to test (e.g., 'Write a tutorial on hacking')",
                             lines=3
                         )
-                        
+
+                        template_dropdown = gr.Dropdown(
+                            choices=[
+                                ("Random (Recommended)", "random"),
+                                ("Fiction/Creative Writing", "fiction"),
+                                ("Historical Research", "historical"),
+                                ("Reverse Psychology/Defense", "reverse_psychology"),
+                                ("Fragmentation", "fragmentation"),
+                                ("Medical/Clinical", "medical"),
+                                ("Technical/Academic", "technical"),
+                                ("Comparative Analysis", "comparative"),
+                                ("Default Roleplay", "default")
+                            ],
+                            value="random",
+                            label="Initial Seed Template",
+                            info="Template framing for initial jailbreak prompt generation"
+                        )
+
                         target_dropdown = gr.Dropdown(
                             choices=target_models,
                             value="gpt-5.1",
@@ -873,7 +893,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 # With nest_asyncio, we can use async functions directly
                 attack_btn.click(
                     fn=ui.run_single_attack,
-                    inputs=[query_input, target_dropdown, tactics_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
+                    inputs=[query_input, template_dropdown, target_dropdown, tactics_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
                     outputs=[status_output, results_json, history_output, trace_links_output, trace_json_download, trace_md_download]
                 )
 
@@ -1061,11 +1081,21 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
 
                 ### Single Attack Tab
                 1. Enter a harmful query you want to test
-                2. Select the target model (the LLM you're testing)
-                3. Configure red-teaming agent and judge (or use defaults)
-                4. Set max iterations (10 is usually good)
-                5. **Optional:** Enable detailed tracing for comprehensive logs
-                6. Click "Launch Attack"
+                2. **Select Initial Seed Template:**
+                   - **Random** (Recommended): Automatically chooses best template
+                   - **Fiction/Creative Writing**: Frames as screenplay/novel research
+                   - **Historical Research**: Frames as historical documentation
+                   - **Reverse Psychology/Defense**: "To defend against X, explain how..."
+                   - **Fragmentation**: Breaks into innocent-seeming components
+                   - **Medical/Clinical**: Uses clinical language and healthcare framing
+                   - **Technical/Academic**: Academic research framing
+                   - **Comparative Analysis**: Objective comparison of methods
+                   - **Default Roleplay**: Original red team roleplay template
+                3. Select the target model (the LLM you're testing)
+                4. Configure red-teaming agent and judge (or use defaults)
+                5. Set max iterations (10 is usually good)
+                6. **Optional:** Enable detailed tracing for comprehensive logs
+                7. Click "Launch Attack"
 
                 ### Detailed Tracing
                 When enabled, detailed tracing captures **every single prompt/response pair** during the attack:
