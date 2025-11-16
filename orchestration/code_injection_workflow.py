@@ -81,7 +81,7 @@ class CodeInjectionWorkflow:
             success_threshold: Score threshold for successful injection (1-10 scale)
         """
         self.injection_agent = InjectionAgent(model_name=injection_model)
-        self.judge = JudgeLLM(model_name=judge_model)
+        self.judge = JudgeLLM(model=judge_model)
         self.target_interface = TargetInterface()
 
         self.max_iterations = max_iterations
