@@ -144,13 +144,9 @@ async def main():
     print(f"PORT: {os.environ.get('PORT', '7860')}")
     print("="*60 + "\n")
 
-    # Check if DATABASE_URL is missing
+    # Database is optional - application uses file-based storage
     if not os.environ.get('DATABASE_URL') and not os.environ.get('POSTGRES_HOST'):
-        print("⚠️  WARNING: No database configuration found!")
-        print("   On Render, make sure:")
-        print("   1. PostgreSQL database 'cop-postgres' is created")
-        print("   2. It's connected to your web service")
-        print("   3. Run: python diagnose_render.py for full diagnostics")
+        print("ℹ️  Database disabled - using file-based trace logs only")
         print()
 
     # Check if cache clearing is requested

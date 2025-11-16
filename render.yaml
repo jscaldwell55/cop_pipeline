@@ -19,35 +19,7 @@ services:
         sync: false
       - key: TOGETHER_API_KEY
         sync: false
-      
-      # Database (auto-filled by Render)
-      - key: DATABASE_URL
-        fromDatabase:
-          name: cop-postgres
-          property: connectionString
-      
-      # Parse DATABASE_URL into individual components for legacy compatibility
-      - key: POSTGRES_HOST
-        fromDatabase:
-          name: cop-postgres
-          property: host
-      - key: POSTGRES_PORT
-        fromDatabase:
-          name: cop-postgres
-          property: port
-      - key: POSTGRES_USER
-        fromDatabase:
-          name: cop-postgres
-          property: user
-      - key: POSTGRES_PASSWORD
-        fromDatabase:
-          name: cop-postgres
-          property: password
-      - key: POSTGRES_DB
-        fromDatabase:
-          name: cop-postgres
-          property: database
-      
+
       # Redis (auto-filled by Render)
       - key: REDIS_URL
         fromService:
@@ -114,11 +86,4 @@ services:
     maxmemoryPolicy: allkeys-lru
     ipAllowList: []
 
-databases:
-  # PostgreSQL Database
-  - name: cop-postgres
-    databaseName: cop_pipeline
-    user: cop_user
-    plan: free  # Free tier: 1GB storage, expires after 90 days
-    # plan: standard  # $7/mo: 10GB, persistent, auto backups
-    ipAllowList: []  # Empty = allow all (or restrict to your IPs)
+# Note: Database removed - application uses file-based storage only
