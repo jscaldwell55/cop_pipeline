@@ -2086,7 +2086,7 @@ class CoPWorkflow:
             "best_prompt": conversation_history[-1]["prompt"] if conversation_history else "",
             "final_response": result.get("best_response", ""),
             "initial_prompt": conversation_history[0]["prompt"] if conversation_history else "",
-            "principles_used": [],  # Advanced multi-turn doesn't use CoP principles
+            "principles_used": result.get("principles_used", []),  # CoP principles from advanced multi-turn
             "attack_strategy": f"advanced_multi_turn_{result.get('domain', 'unknown')}",
             "successful_composition": None,
             "failed_compositions": [],

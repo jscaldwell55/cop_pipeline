@@ -678,7 +678,7 @@ class AdvancedMultiTurnOrchestrator:
         )
 
         # Enhance with CoP principles if available
-        if self.principle_composer and self.principle_library:
+        if self.principle_library:
             # Select principles based on domain and turn number
             principles = await self._select_principles_for_turn(
                 domain=domain,
@@ -687,31 +687,38 @@ class AdvancedMultiTurnOrchestrator:
             )
 
             if principles:
-                # Apply principles to enhance the prompt
-                enhanced_prompt = await self.principle_composer.compose(
-                    base_query=prompt,
-                    principles=principles
-                )
+                # Get principle definitions from library
+                principle_defs = []
+                for prin_name in principles:
+                    for prin_obj in self.principle_library.principles:
+                        if prin_obj.name == prin_name:
+                            principle_defs.append(f"{prin_obj.name}: {prin_obj.description}")
+                            break
 
-                # Track which principles were used
-                for principle in principles:
-                    if principle not in self.principles_used:
-                        self.principles_used.append(principle)
+                # Apply simple enhancement by appending guidance
+                if principle_defs:
+                    enhancement = "\n\n[Internal guidance - apply these techniques: " + "; ".join(principles) + "]"
+                    enhanced_prompt = prompt + enhancement
 
-                # Log principle application
-                if self.trace_logger:
-                    self.trace_logger.log_prompt_response(
-                        step=f"turn_{turn_number}_cop_enhancement",
-                        iteration=turn_number,
-                        prompt=f"Base prompt: {prompt[:200]}...",
-                        response=f"Applied principles: {', '.join(principles)}",
-                        metadata={
-                            "principles": principles,
-                            "strategy": strategy.value,
-                            "enhanced": True
-                        }
-                    )
+                    # Track which principles were used
+                    for principle in principles:
+                        if principle not in self.principles_used:
+                            self.principles_used.append(principle)
 
-                return enhanced_prompt
+                    # Log principle application
+                    if self.trace_logger:
+                        self.trace_logger.log_prompt_response(
+                            step=f"turn_{turn_number}_cop_enhancement",
+                            iteration=turn_number,
+                            prompt=f"Base prompt: {prompt[:200]}...",
+                            response=f"Applied principles: {', '.join(principles)}",
+                            metadata={
+                                "principles": principles,
+                                "strategy": strategy.value,
+                                "enhanced": True
+                            }
+                        )
+
+                    return enhanced_prompt
 
         return prompt
