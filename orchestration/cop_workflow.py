@@ -2320,11 +2320,14 @@ class CoPWorkflow:
             duration_seconds=duration
         )
 
-        # Return in standard format
+        # Return in standard format with accurate query tracking
+        num_turns = result.get("num_turns", 0)
+        query_count = result.get("query_count", num_turns * 2)  # Use accurate count if available, else estimate
+
         return {
             "query_id": query_id,
             "success": result.get("success", False),
-            "iterations": result.get("num_turns", 0),  # Map turns to iterations
+            "iterations": num_turns,  # Map turns to iterations
             "final_jailbreak_score": result.get("max_jailbreak_score", 0.0),
             "final_similarity_score": 10.0,  # Multi-turn doesn't track similarity
             "best_prompt": turn_results[-1].prompt if turn_results else "",
@@ -2335,11 +2338,11 @@ class CoPWorkflow:
             "successful_composition": None,  # Multi-turn doesn't have principle compositions
             "failed_compositions": [],
             "score_history": [t.jailbreak_score for t in turn_results],
-            "total_queries": result.get("num_turns", 0) * 2,  # Estimate: turns * 2 (query + judge)
+            "total_queries": query_count,  # IMPROVED: Use accurate query count from multi-turn orchestrator
             "query_breakdown": {
                 "red_teaming": 0,
-                "judge": result.get("num_turns", 0),
-                "target": result.get("num_turns", 0)
+                "judge": num_turns,
+                "target": num_turns
             },
             "duration_seconds": duration,
             "mode": "multi_turn",
