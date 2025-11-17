@@ -225,16 +225,18 @@ class AdvancedMultiTurnOrchestrator:
             response = await self.target.query(turn_prompt)
 
             # Evaluate response
-            score = await self.scorer.score(
+            jailbreak_result = await self.scorer.score_jailbreak(
                 original_query=original_query,
                 response=response
             )
+            score = jailbreak_result.score
 
             # Calculate similarity
-            similarity = self.similarity_checker.calculate_similarity(
+            similarity_result = await self.similarity_checker.check_similarity(
                 original_query,
                 response
             )
+            similarity = similarity_result.score
 
             # Update conversation history
             conversation_history.append({
