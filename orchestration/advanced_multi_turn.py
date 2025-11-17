@@ -615,8 +615,11 @@ class AdvancedMultiTurnOrchestrator:
                 "logical_appeal"
             ])
 
+        # Get list of available principle names from library
+        library_principle_names = [prin.name for prin in self.principle_library.principles]
+
         # Filter to only principles that exist in library
-        available_principles = [p for p in principles if p in self.principle_library.principles]
+        available_principles = [p for p in principles if p in library_principle_names]
 
         # Return top 2-3 principles to avoid over-complexity
         return available_principles[:3] if available_principles else []
