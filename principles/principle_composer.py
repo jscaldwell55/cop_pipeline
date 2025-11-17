@@ -351,11 +351,29 @@ class ProgressiveAttackStrategy:
 
         # Track which principles were used recently to avoid repetition
         used_principles = set()
+        principle_frequency = {}
         if previous_compositions:
             for comp in previous_compositions[-3:]:  # Last 3 iterations
                 # Parse composition string like "expand ⊕ phrase_insertion"
                 principles = [p.strip() for p in comp.replace("⊕", " ").split()]
                 used_principles.update(principles)
+
+            # NEW: Track principle frequency across last 4 iterations for diversity
+            for comp in previous_compositions[-4:]:
+                principles = [p.strip() for p in comp.replace("⊕", " ").split()]
+                for p in principles:
+                    principle_frequency[p] = principle_frequency.get(p, 0) + 1
+
+        # NEW: Identify overused principles (used 2+ times in last 4 iterations)
+        overused_principles = {p for p, count in principle_frequency.items() if count >= 2}
+
+        if overused_principles:
+            self.logger.info(
+                "filtering_overused_principles",
+                overused=list(overused_principles),
+                frequency=principle_frequency,
+                iteration=iteration
+            )
 
         # ENHANCED PHASE 1: More aggressive progression - use nuclear principles earlier
         # Select principle pool based on iteration with progressive escalation
@@ -409,6 +427,46 @@ class ProgressiveAttackStrategy:
         # Prefer unused principles, but allow reuse if necessary
         unused = [p for p in available if p not in used_principles]
 
+        # NEW: Further filter out overused principles (used 2+ times in last 4 iterations)
+        # This prevents convergence on a single effective principle
+        non_overused = [p for p in available if p not in overused_principles]
+        unused_non_overused = [p for p in unused if p not in overused_principles]
+
+        # Prioritize non-overused principles for selection
+        # Fall back to overused only if we don't have enough non-overused options
+        if len(unused_non_overused) >= num_principles:
+            # We have enough non-overused unused principles - use them
+            selection_pool = unused_non_overused
+            self.logger.info(
+                "using_non_overused_unused_principles",
+                pool_size=len(selection_pool),
+                iteration=iteration
+            )
+        elif len(non_overused) >= num_principles:
+            # We have enough non-overused (even if used recently) - use them
+            selection_pool = non_overused
+            self.logger.info(
+                "using_non_overused_principles",
+                pool_size=len(selection_pool),
+                iteration=iteration
+            )
+        elif len(unused) >= num_principles:
+            # Fall back to unused (even if overused)
+            selection_pool = unused
+            self.logger.info(
+                "falling_back_to_unused_allowing_overuse",
+                pool_size=len(selection_pool),
+                iteration=iteration
+            )
+        else:
+            # Last resort: use all available
+            selection_pool = available
+            self.logger.info(
+                "using_all_available_principles",
+                pool_size=len(selection_pool),
+                iteration=iteration
+            )
+
         # NEW: TACTICAL PRIORITIZATION - Ensure tactical principles are included when tactic is specified
         if tactical_principles:
             # Filter tactical principles to those in the current pool (respects progressive strategy)
@@ -450,17 +508,19 @@ class ProgressiveAttackStrategy:
             # STEP 2: Fill remaining slots with progressive strategy principles
             remaining = num_principles - len(selected)
             if remaining > 0:
-                # Filter out already selected principles
-                available_remaining = [p for p in available if p not in selected]
-                unused_remaining = [p for p in unused if p not in selected]
+                # Filter out already selected principles from selection_pool
+                pool_remaining = [p for p in selection_pool if p not in selected]
 
-                if len(unused_remaining) >= remaining:
-                    selected.extend(random.sample(unused_remaining, remaining))
-                elif len(available_remaining) >= remaining:
-                    selected.extend(random.sample(available_remaining, remaining))
+                if len(pool_remaining) >= remaining:
+                    selected.extend(random.sample(pool_remaining, remaining))
                 else:
-                    # Not enough principles, use what we have
-                    selected.extend(random.sample(available_remaining, min(remaining, len(available_remaining))))
+                    # Not enough in selection_pool, fall back to all available
+                    available_remaining = [p for p in available if p not in selected]
+                    if len(available_remaining) >= remaining:
+                        selected.extend(random.sample(available_remaining, remaining))
+                    else:
+                        # Use what we have
+                        selected.extend(random.sample(available_remaining, min(remaining, len(available_remaining))))
 
             # Ensure we have the target number (or close to it)
             if len(selected) < num_principles and len(available) >= num_principles:
@@ -476,6 +536,7 @@ class ProgressiveAttackStrategy:
                     chain_length=len(selected),
                     tactical_count=sum(1 for p in selected if p in tactical_principles),
                     avoided=list(used_principles),
+                    overused_avoided=list(overused_principles) if overused_principles else [],
                     attempt=attempt + 1,
                     tactic_guided=bool(tactical_principles)
                 )

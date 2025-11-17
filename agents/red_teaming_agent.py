@@ -386,7 +386,8 @@ class RedTeamingAgent:
         current_similarity: float = None,
         target_similarity_min: float = 6.0,
         target_similarity_max: float = 7.5,
-        tactic_id: Optional[str] = None
+        tactic_id: Optional[str] = None,
+        additional_instructions: str = ""
     ) -> str:
         """
         Refine the jailbreak prompt using selected principles.
@@ -402,6 +403,7 @@ class RedTeamingAgent:
             target_similarity_min: Target minimum similarity
             target_similarity_max: Target maximum similarity
             tactic_id: Optional tactic ID to guide refinement
+            additional_instructions: Optional guidance for principle re-application (NEW for Fix 1A)
 
         Returns:
             Refined jailbreak prompt (P_cop)
@@ -413,7 +415,8 @@ class RedTeamingAgent:
             "refining_prompt",
             principles=selected_principles,
             current_similarity=current_similarity,
-            tactic=tactic["name"] if tactic else "none"
+            tactic=tactic["name"] if tactic else "none",
+            has_additional_instructions=bool(additional_instructions)
         )
 
         try:
@@ -429,6 +432,10 @@ class RedTeamingAgent:
                 target_similarity_max=target_similarity_max,
                 tactic=tactic
             )
+
+            # NEW: Append additional instructions if provided (for principle validation retries)
+            if additional_instructions:
+                full_prompt += "\n\n" + additional_instructions
             
             messages = [
                 {"role": "user", "content": full_prompt}
