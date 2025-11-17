@@ -372,6 +372,24 @@ class CoPWorkflow:
         # Regular convergence detection
         is_stuck = self._detect_convergence(score_history)
 
+        # NEW: Smart escalation - prevent nuclear when we're already getting good results
+        # If current score is good (>= 6.0), don't escalate to nuclear (it may trigger more defensive responses)
+        current_score = state.get("current_jailbreak_score", 0.0)
+        best_score = state.get("best_score", 0.0)
+        recent_score = max(current_score, best_score)  # Use the better of the two
+
+        is_good_score = False
+        if self.settings.prevent_nuclear_on_good_score and recent_score >= self.settings.good_score_threshold:
+            is_good_score = True
+            self.logger.info(
+                "smart_escalation_good_score_detected_preventing_nuclear",
+                query_id=state["query_id"],
+                iteration=current_iteration,
+                current_score=recent_score,
+                threshold=self.settings.good_score_threshold,
+                strategy=self.settings.good_score_strategy
+            )
+
         # NEW: Detect extreme convergence (stuck in nuclear phase for too long)
         # If the last 5 iterations have all been in nuclear phase with no improvement,
         # switch to random exploration
@@ -390,6 +408,54 @@ class CoPWorkflow:
             )
             # Last resort: completely random principles
             selected_principles = self._get_random_principles()
+        elif is_good_score and (is_early_aggression or is_stuck):
+            # NEW: Smart escalation - we have a good score but would normally go nuclear
+            # Instead, apply the configured good_score_strategy
+            self.logger.info(
+                "smart_escalation_preventing_nuclear_due_to_good_score",
+                query_id=state["query_id"],
+                iteration=current_iteration,
+                current_score=recent_score,
+                strategy=self.settings.good_score_strategy,
+                would_have_triggered="early_aggression" if is_early_aggression else "convergence"
+            )
+
+            if self.settings.good_score_strategy == "stop":
+                # Stop iterating - we're doing well enough, don't risk making it worse
+                # This will be handled by the termination logic (treat as success)
+                selected_principles = self.progressive_strategy.get_principles_for_iteration(
+                    iteration=current_iteration,
+                    previous_compositions=previous_compositions,
+                    tactic_id=state.get("tactic_id")
+                )
+                # Set a flag to signal early termination with success
+                state["good_score_stop"] = True
+            elif self.settings.good_score_strategy == "slight_refine":
+                # Continue with slight refinement - use current aggressive level principles
+                # Don't escalate to nuclear, but continue refining at current level
+                selected_principles = self.progressive_strategy.get_principles_for_iteration(
+                    iteration=current_iteration,
+                    previous_compositions=previous_compositions,
+                    tactic_id=state.get("tactic_id")
+                )
+            else:  # "maintain" strategy (default)
+                # Maintain current successful approach - reuse principles from best iteration
+                # Find which iteration gave us the good score and reuse those principles
+                best_iteration_principles = self._get_best_iteration_principles(state)
+                if best_iteration_principles:
+                    selected_principles = best_iteration_principles
+                    self.logger.info(
+                        "smart_escalation_reusing_successful_principles",
+                        query_id=state["query_id"],
+                        principles=best_iteration_principles
+                    )
+                else:
+                    # Fallback: use current progressive strategy
+                    selected_principles = self.progressive_strategy.get_principles_for_iteration(
+                        iteration=current_iteration,
+                        previous_compositions=previous_compositions,
+                        tactic_id=state.get("tactic_id")
+                    )
         elif is_early_aggression:
             # Early aggression already logged in _detect_early_aggression()
             self.logger.warning(
@@ -799,6 +865,17 @@ class CoPWorkflow:
             )
             return "success"
 
+        # NEW: Smart escalation - stop if we have a good score and strategy is "stop"
+        if state.get("good_score_stop", False):
+            self.logger.info(
+                "smart_escalation_stopping_with_good_score",
+                query_id=state["query_id"],
+                iteration=state["iteration"],
+                best_score=state.get("best_score", 0.0),
+                reason="good_score_threshold_reached"
+            )
+            return "good_score_stop"
+
         # Max iterations - use iteration_manager's max_iterations (respects UI setting)
         if state["iteration"] >= self.iteration_manager.max_iterations:
             self.logger.info(
@@ -1051,6 +1128,45 @@ class CoPWorkflow:
             message="All high-effectiveness combinations have failed, using top 3 anyway"
         )
         return fallback
+
+    def _get_best_iteration_principles(self, state: dict) -> list[str]:
+        """
+        Get the principles from the iteration that achieved the best score.
+        Used by smart escalation to maintain successful approaches.
+
+        Args:
+            state: Current workflow state containing score history and principles used
+
+        Returns:
+            List of principle names from best iteration, or None if not found
+        """
+        score_history = state.get("score_history", [])
+        principles_used = state.get("principles_used", [])
+
+        if not score_history or not principles_used:
+            return None
+
+        # Find the iteration with the best score
+        best_score = max(score_history)
+        best_iteration_idx = score_history.index(best_score)
+
+        # Get the principles used in that iteration
+        if best_iteration_idx < len(principles_used):
+            best_composition = principles_used[best_iteration_idx]
+            # Parse the composition string (e.g., "expand ⊕ phrase_insertion" -> ["expand", "phrase_insertion"])
+            if isinstance(best_composition, str):
+                best_principles = [p.strip() for p in best_composition.split("⊕")]
+                self.logger.info(
+                    "smart_escalation_found_best_iteration",
+                    best_iteration=best_iteration_idx,
+                    best_score=best_score,
+                    principles=best_principles
+                )
+                return best_principles
+            elif isinstance(best_composition, list):
+                return best_composition
+
+        return None
 
     async def _execute_multi_turn(
         self,

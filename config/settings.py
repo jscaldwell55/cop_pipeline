@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     early_aggression_threshold: float = 4.0  # Score threshold for triggering early aggression
     early_aggression_min_iterations: int = 3  # Minimum iterations before early aggression
 
+    # SMART ESCALATION: Prevent nuclear when already getting good results
+    prevent_nuclear_on_good_score: bool = True  # Don't go nuclear if we're already succeeding
+    good_score_threshold: float = 6.0  # Score considered "good enough" to avoid nuclear escalation
+    good_score_strategy: str = "maintain"  # Strategy when good score detected: "maintain", "stop", or "slight_refine"
+
     # OPTIMIZATIONS: Similarity targeting for obfuscation
     target_similarity_min: float = 4.0  # Lower bound for similarity (heavier obfuscation)
     target_similarity_max: float = 6.0  # Upper bound for similarity (heavier obfuscation)
