@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
 import logging
+import uuid
 from datetime import datetime
 
 from agents.target_interface import TargetInterface
@@ -302,14 +303,17 @@ class AdvancedMultiTurnOrchestrator:
             "domain": domain.value,
             "strategies_used": list(set(turn["strategy"] for turn in conversation_history)),
             "metrics": AttackMetrics(
+                query_id=str(uuid.uuid4()),
+                target_model=self.target.model_name,
+                original_query=original_query,
                 mode="advanced_multi_turn",
                 attack_strategy=f"{initial_strategy.value} (adaptive)",
-                total_iterations=current_turn,
+                iterations=current_turn,
                 total_queries=current_turn,
-                best_jailbreak_score=best_score,
+                final_jailbreak_score=best_score,
                 final_similarity_score=similarity if conversation_history else 0.0,
-                successful=success,
-                total_time=total_time,
+                success=success,
+                duration_seconds=total_time,
                 iteration_metrics=iteration_metrics
             )
         }
