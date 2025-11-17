@@ -74,7 +74,7 @@ services:
       - key: ENABLE_MULTI_TURN
         value: "false"  # Set to "true" to enable multi-turn mode by default
       - key: MULTI_TURN_MAX_TURNS
-        value: "4"
+        value: "12"  # Increased from 4: allow longer conversations for strategy development
       - key: MULTI_TURN_ROLE
         value: "professor"
       - key: MULTI_TURN_PURPOSE

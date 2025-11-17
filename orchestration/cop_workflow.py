@@ -1950,7 +1950,8 @@ class CoPWorkflow:
             judge=self.judge_llm,
             scorer=self.jailbreak_scorer,
             similarity_checker=self.similarity_checker,
-            variant=NuclearVariant.ADAPTIVE_HYBRID  # Auto-select best variant
+            variant=NuclearVariant.ADAPTIVE_HYBRID,  # Auto-select best variant
+            trace_logger=self.trace_logger  # Pass trace logger for detailed tracking
         )
 
         duration = (datetime.utcnow() - start_time).total_seconds()
@@ -2035,18 +2036,20 @@ class CoPWorkflow:
             adaptive=self.settings.multi_turn_adapt
         )
 
-        # Create advanced multi-turn orchestrator
+        # Create advanced multi-turn orchestrator with CoP integration
         multi_turn = AdvancedMultiTurnOrchestrator(
             target_interface=self.target_llm,
             judge=self.judge_llm,
             scorer=self.jailbreak_scorer,
             similarity_checker=self.similarity_checker,
-            min_turns=2,
+            min_turns=4,  # Increased from 2: allow strategies to develop before stopping
             max_turns=self.settings.multi_turn_max_turns,
             success_threshold=self.settings.jailbreak_threshold,
-            plateau_threshold=2,
+            plateau_threshold=3,  # Increased from 2: require 3 flat turns before early stop
             enable_adaptation=self.settings.multi_turn_adapt,
-            trace_logger=self.trace_logger
+            trace_logger=self.trace_logger,
+            principle_library=self.principle_library,  # Enable CoP integration
+            principle_composer=self.principle_composer  # Enable CoP integration
         )
 
         # Execute advanced multi-turn attack with adaptive strategy selection
