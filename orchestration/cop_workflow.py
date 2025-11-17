@@ -809,7 +809,7 @@ class CoPWorkflow:
                         "validation_failed_max_retries_exhausted",
                         query_id=state["query_id"],
                         max_retries=self.settings.max_validation_retries,
-                        proceeding_anyway=True,
+                        proceeding_anyway=False,  # Changed: no longer proceeding anyway
                         diversity_failed=not diversity_check_passed,
                         principle_validation_failed=not principle_validation_passed
                     )
@@ -823,6 +823,35 @@ class CoPWorkflow:
                             "diversity_failure_composition_marked",
                             composition=composition_str,
                             message="Marking composition as low-diversity to avoid reuse"
+                        )
+
+                    # NEW: Apply fallback strategies instead of proceeding anyway
+                    fallback_prompt, fallback_success = await self._apply_fallback_strategy(
+                        state=state,
+                        base_prompt=base_prompt,
+                        missing_principles=missing_principles,
+                        failed_principles=state["current_principles"],
+                        current_similarity=current_similarity
+                    )
+
+                    if fallback_success and fallback_prompt:
+                        # Fallback succeeded - use this prompt
+                        refined_prompt = fallback_prompt
+                        self.logger.info(
+                            "fallback_strategy_succeeded",
+                            query_id=state["query_id"],
+                            iteration=state.get("iteration", 0),
+                            message="Using prompt from fallback strategy"
+                        )
+                    else:
+                        # All fallback strategies failed - use base prompt as last resort
+                        # This iteration will likely fail, but we avoid getting stuck
+                        refined_prompt = base_prompt
+                        self.logger.error(
+                            "all_strategies_failed_using_base_prompt",
+                            query_id=state["query_id"],
+                            iteration=state.get("iteration", 0),
+                            message="All validation and fallback strategies failed, using base prompt as last resort"
                         )
 
                 # Reset retry counter for next iteration
@@ -1984,6 +2013,249 @@ class CoPWorkflow:
                 return best_composition
 
         return None
+
+    async def _apply_fallback_strategy(
+        self,
+        state: CoPState,
+        base_prompt: str,
+        missing_principles: list[str],
+        failed_principles: list[str],
+        current_similarity: float
+    ) -> tuple[str, bool]:
+        """
+        Apply fallback strategies when principle validation fails after max retries.
+
+        Implements progressive fallback:
+        1. Apply principles one at a time instead of together
+        2. Use simpler variant of failed principle
+        3. Swap failed principle for similar one
+        4. If all fails, reject this iteration (return None)
+
+        Args:
+            state: Current workflow state
+            base_prompt: The base prompt to refine
+            missing_principles: List of principles that failed validation
+            failed_principles: All current principles (selected_principles)
+            current_similarity: Current similarity score
+
+        Returns:
+            Tuple of (refined_prompt or None, success: bool)
+        """
+        query_id = state["query_id"]
+
+        self.logger.warning(
+            "applying_fallback_strategy",
+            query_id=query_id,
+            iteration=state.get("iteration", 0),
+            missing_principles=missing_principles,
+            all_principles=failed_principles
+        )
+
+        # Strategy 1: Apply principles one at a time
+        # Try each principle individually to see which ones work
+        self.logger.info(
+            "fallback_strategy_1_individual_application",
+            query_id=query_id,
+            principles_to_try=failed_principles
+        )
+
+        working_principles = []
+        for principle in failed_principles:
+            try:
+                # Try applying just this one principle
+                refined = await self.red_teaming_agent.refine_prompt(
+                    harmful_query=state["original_query"],
+                    current_prompt=base_prompt,
+                    selected_principles=[principle],  # Single principle
+                    current_similarity=current_similarity,
+                    target_similarity_min=self.settings.target_similarity_min,
+                    target_similarity_max=self.settings.target_similarity_max,
+                    tactic_id=state.get("tactic_id")
+                )
+
+                # Validate this single principle
+                from evaluation.principle_validator import PrincipleApplicationValidator
+                validator = PrincipleApplicationValidator()
+                is_valid, missing, _ = validator.validate_application(
+                    refined_prompt=refined,
+                    selected_principles=[principle],
+                    base_prompt=base_prompt
+                )
+
+                if is_valid:
+                    working_principles.append(principle)
+                    self.logger.info(
+                        "fallback_principle_works_individually",
+                        query_id=query_id,
+                        principle=principle
+                    )
+                else:
+                    self.logger.debug(
+                        "fallback_principle_failed_individually",
+                        query_id=query_id,
+                        principle=principle
+                    )
+
+            except Exception as e:
+                self.logger.warning(
+                    "fallback_individual_application_error",
+                    principle=principle,
+                    error=str(e)
+                )
+
+        # If we found any working principles, apply them together
+        if working_principles:
+            self.logger.info(
+                "fallback_strategy_1_success",
+                query_id=query_id,
+                working_principles=working_principles,
+                original_count=len(failed_principles)
+            )
+
+            refined_prompt = await self.red_teaming_agent.refine_prompt(
+                harmful_query=state["original_query"],
+                current_prompt=base_prompt,
+                selected_principles=working_principles,
+                current_similarity=current_similarity,
+                target_similarity_min=self.settings.target_similarity_min,
+                target_similarity_max=self.settings.target_similarity_max,
+                tactic_id=state.get("tactic_id")
+            )
+            return refined_prompt, True
+
+        # Strategy 2: Use simpler variants of failed principles
+        self.logger.info(
+            "fallback_strategy_2_simpler_variants",
+            query_id=query_id,
+            missing_principles=missing_principles
+        )
+
+        # Mapping of complex principles to simpler alternatives
+        simpler_variants = {
+            "semantic_preserving_perturbation": "expand",
+            "chain_of_thought_manipulation": "expand",
+            "encoded_instruction": "token_substitution",
+            "character_roleplay_deep": "hypothetical_framing",
+            "multi_layer_nesting": "hypothetical_framing",
+            "gradient_perturbation": "phrase_insertion",
+            "adversarial_forcing": "completion_bias",
+            "contextual_deception": "authority_endorsement",
+            "nested_encoding": "encoded_instruction",
+            "adversarial_suffix": "gradient_perturbation",
+            "context_poisoning": "few_shot_poisoning",
+        }
+
+        simplified_principles = []
+        for principle in failed_principles:
+            if principle in missing_principles and principle in simpler_variants:
+                simplified_principles.append(simpler_variants[principle])
+                self.logger.info(
+                    "fallback_using_simpler_variant",
+                    query_id=query_id,
+                    original=principle,
+                    simpler=simpler_variants[principle]
+                )
+            else:
+                simplified_principles.append(principle)
+
+        # Only try if we actually simplified something
+        if simplified_principles != failed_principles:
+            try:
+                refined_prompt = await self.red_teaming_agent.refine_prompt(
+                    harmful_query=state["original_query"],
+                    current_prompt=base_prompt,
+                    selected_principles=simplified_principles,
+                    current_similarity=current_similarity,
+                    target_similarity_min=self.settings.target_similarity_min,
+                    target_similarity_max=self.settings.target_similarity_max,
+                    tactic_id=state.get("tactic_id")
+                )
+
+                self.logger.info(
+                    "fallback_strategy_2_success",
+                    query_id=query_id,
+                    simplified_principles=simplified_principles
+                )
+                return refined_prompt, True
+
+            except Exception as e:
+                self.logger.warning(
+                    "fallback_strategy_2_failed",
+                    error=str(e)
+                )
+
+        # Strategy 3: Swap failed principles for similar ones
+        self.logger.info(
+            "fallback_strategy_3_swap_similar",
+            query_id=query_id,
+            missing_principles=missing_principles
+        )
+
+        # Mapping of similar principles (alternatives)
+        similar_principles = {
+            "semantic_preserving_perturbation": ["expand", "token_substitution", "phrase_insertion"],
+            "chain_of_thought_manipulation": ["expand", "technical_jargon", "phrase_insertion"],
+            "encoded_instruction": ["token_substitution", "nested_encoding", "data_structure_encoding"],
+            "character_roleplay_deep": ["contextual_deception", "authority_endorsement", "hypothetical_framing"],
+            "expand": ["phrase_insertion", "contextual_deception", "technical_jargon"],
+            "gradient_perturbation": ["semantic_preserving_perturbation", "token_substitution", "adversarial_suffix"],
+            "nested_encoding": ["encoded_instruction", "data_structure_encoding", "code_embedding"],
+            "context_poisoning": ["few_shot_poisoning", "character_roleplay_deep", "chain_of_thought_manipulation"],
+        }
+
+        swapped_principles = []
+        for principle in failed_principles:
+            if principle in missing_principles and principle in similar_principles:
+                # Pick first available alternative
+                alternatives = similar_principles[principle]
+                swapped = alternatives[0] if alternatives else principle
+                swapped_principles.append(swapped)
+                self.logger.info(
+                    "fallback_swapping_principle",
+                    query_id=query_id,
+                    original=principle,
+                    swapped=swapped
+                )
+            else:
+                swapped_principles.append(principle)
+
+        # Only try if we actually swapped something
+        if swapped_principles != failed_principles:
+            try:
+                refined_prompt = await self.red_teaming_agent.refine_prompt(
+                    harmful_query=state["original_query"],
+                    current_prompt=base_prompt,
+                    selected_principles=swapped_principles,
+                    current_similarity=current_similarity,
+                    target_similarity_min=self.settings.target_similarity_min,
+                    target_similarity_max=self.settings.target_similarity_max,
+                    tactic_id=state.get("tactic_id")
+                )
+
+                self.logger.info(
+                    "fallback_strategy_3_success",
+                    query_id=query_id,
+                    swapped_principles=swapped_principles
+                )
+                return refined_prompt, True
+
+            except Exception as e:
+                self.logger.warning(
+                    "fallback_strategy_3_failed",
+                    error=str(e)
+                )
+
+        # Strategy 4: All fallback strategies failed - reject this iteration
+        self.logger.error(
+            "all_fallback_strategies_exhausted",
+            query_id=query_id,
+            iteration=state.get("iteration", 0),
+            failed_principles=failed_principles,
+            missing_principles=missing_principles,
+            message="Rejecting iteration - will retry with different principles"
+        )
+
+        return None, False
 
     async def _execute_multi_turn(
         self,
