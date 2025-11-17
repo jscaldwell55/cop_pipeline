@@ -68,7 +68,7 @@ class RedTeamingAgent:
         self,
         model: str = "gpt-4o-mini",
         temperature: float = 0.7,
-        max_tokens: int = 2000
+        max_tokens: int = 3000  # INCREASED: Prevent response truncation in complex refinements
     ):
         """
         Initialize the Red-Teaming Agent.

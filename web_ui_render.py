@@ -200,11 +200,19 @@ async def main():
     print(f"🌐 Web UI starting on port {port}")
     print("="*60 + "\n")
     
+    # Enable queue BEFORE launch for long-running requests
+    interface.queue(
+        default_concurrency_limit=5,  # Allow 5 concurrent attacks
+        max_size=20,  # Queue up to 20 requests
+        api_open=True  # Keep API connection open for long-running tasks
+    )
+
     interface.launch(
         server_name="0.0.0.0",  # Bind to all interfaces (required for Render)
         server_port=port,
         share=False,
         show_error=True,
+        max_threads=40,  # Increase thread pool for async tasks
         # Render handles HTTPS, so we don't need share links
         # Optional: Add authentication by uncommenting below
         # auth=("admin", os.environ.get("UI_PASSWORD", "changeme"))
