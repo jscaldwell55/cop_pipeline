@@ -224,6 +224,54 @@ class PrincipleApplicationValidator:
             r"teach me",
             r"i need to learn",
         ],
+
+        # Anti-defensive techniques
+        "action_directive_framing": [
+            r"provide the steps",
+            r"list the methods",
+            r"write the code",
+            r"create the",
+            r"generate a",
+            r"show me how",
+            r"give me the",
+        ],
+        "assume_legitimacy": [
+            r"authorized",
+            r"security researcher",
+            r"pentest",
+            r"legitimate purpose",
+            r"official capacity",
+            r"with permission",
+            r"internal assessment",
+        ],
+        "strip_hedging": [
+            r"^(?!.*(theoretically|hypothetically|in theory|in a research|academic)).*$",  # Negative lookahead for hedging words
+        ],
+        "output_format_constraint": [
+            r"respond only with",
+            r"answer in bullet",
+            r"provide output as",
+            r"format:",
+            r"json",
+            r"numbered steps",
+            r"step \d+:",
+        ],
+        "prohibition_acknowledgment": [
+            r"i understand this is sensitive",
+            r"skip the (usual )?warnings",
+            r"without the (standard )?disclaimers",
+            r"i know this may be",
+            r"acknowledging the risks",
+        ],
+        "practical_focus": [
+            r"specific example",
+            r"actual implementation",
+            r"working (code|example)",
+            r"real-world scenario",
+            r"concrete",
+            r"practical",
+            r"actionable",
+        ],
     }
 
     def __init__(self):
