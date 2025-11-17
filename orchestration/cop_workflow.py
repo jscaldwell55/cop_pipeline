@@ -2045,7 +2045,8 @@ class CoPWorkflow:
             max_turns=self.settings.multi_turn_max_turns,
             success_threshold=self.settings.jailbreak_threshold,
             plateau_threshold=2,
-            enable_adaptation=self.settings.multi_turn_adapt
+            enable_adaptation=self.settings.multi_turn_adapt,
+            trace_logger=self.trace_logger
         )
 
         # Execute advanced multi-turn attack with adaptive strategy selection
