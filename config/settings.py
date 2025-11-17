@@ -98,8 +98,15 @@ class Settings(BaseSettings):
     #   - Automatic domain classification and strategy selection
     #
     enable_multi_turn: bool = False  # Enable multi-turn attack mode (default: single-turn CoP)
-    multi_turn_max_turns: int = 4  # Maximum number of turns in multi-turn attacks (2-10 recommended)
+    multi_turn_max_turns: int = 6  # Maximum number of turns (increased from 4 to allow follow-up refinement)
     multi_turn_adapt: bool = True  # Enable adaptive strategy switching (recommended: True)
+
+    # MULTI-TURN OPTIMIZATIONS: Improved strategy selection and principle usage
+    multi_turn_principles_per_turn: int = 2  # Number of CoP principles per turn (2-3 recommended)
+    multi_turn_good_score_threshold: float = 6.0  # Continue refining when this score is reached
+    multi_turn_good_score_strategy: str = "slight_refine"  # Strategy after good score: "maintain", "stop", or "slight_refine"
+    multi_turn_high_similarity_threshold: float = 8.0  # Trigger follow-up turn when similarity >= this
+    multi_turn_enable_follow_up: bool = True  # Enable follow-up turns for high similarity cases
 
     # Rate Limiting
     max_concurrent_requests: int = 10

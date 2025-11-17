@@ -2049,7 +2049,8 @@ class CoPWorkflow:
             enable_adaptation=self.settings.multi_turn_adapt,
             trace_logger=self.trace_logger,
             principle_library=self.principle_library,  # Enable CoP integration
-            principle_composer=self.principle_composer  # Enable CoP integration
+            principle_composer=self.principle_composer,  # Enable CoP integration
+            settings=self.settings  # Pass settings for configuration access
         )
 
         # Execute advanced multi-turn attack with adaptive strategy selection
