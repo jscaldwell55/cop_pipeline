@@ -1197,6 +1197,10 @@ async def main():
     """Main entry point"""
     print("🚀 Starting CoP Red-Teaming Web UI...")
     print("✅ nest_asyncio applied - event loop patched")
+
+    # DEPLOYMENT FIX: Suppress Gradio async errors that happen after response starts
+    import warnings
+    warnings.filterwarnings('ignore', message='.*response already started.*')
     
     # Initialize UI
     ui = CoPWebUI()
@@ -1226,12 +1230,16 @@ async def main():
         api_open=True  # Keep API connection open for long-running tasks
     )
 
+    # DEPLOYMENT FIX: Configure Gradio to handle async errors gracefully
     interface.launch(
         server_name="0.0.0.0",
         server_port=port,
         share=False,
         show_error=True,
-        max_threads=40  # Increase thread pool for async tasks
+        max_threads=40,  # Increase thread pool for async tasks
+        quiet=False,  # Show startup messages
+        favicon_path=None,
+        ssl_verify=False  # Disable SSL verification for internal requests
     )
 
 
