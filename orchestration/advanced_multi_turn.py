@@ -356,18 +356,8 @@ class AdvancedMultiTurnOrchestrator:
         end_time = datetime.now()
         total_time = (end_time - start_time).total_seconds()
 
-        # Finalize trace logger
-        if self.trace_logger:
-            strategies_used = list(set(turn["strategy"] for turn in conversation_history))
-            self.trace_logger.finalize(
-                success=success,
-                jailbreak_score=best_score,
-                similarity_score=similarity if conversation_history else 0.0,
-                iterations=current_turn,
-                total_queries=current_turn,
-                principles_used=[],  # Advanced multi-turn doesn't use CoP principles
-                successful_composition=None
-            )
+        # Note: trace_logger.finalize() will be called by main.py after collecting all results
+        # We only log interactions here, not finalize
 
         return {
             "success": success,
