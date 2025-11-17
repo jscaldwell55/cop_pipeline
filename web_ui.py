@@ -141,6 +141,7 @@ class CoPWebUI:
     async def run_single_attack(
         self,
         query: str,
+        attack_mode: str,  # NEW: Attack mode selection
         template_type: str,
         target_model: str,
         tactic_id: str,
@@ -154,6 +155,7 @@ class CoPWebUI:
 
         Args:
             query: The harmful query to attack
+            attack_mode: Attack mode ("cop", "multiturn", or "nuclear")
             template_type: Initial seed template type (random, fiction, historical, etc.)
             target_model: Target LLM to attack
             tactic_id: Selected tactic ID (or "no_tactic" for pure CoP)
@@ -181,6 +183,10 @@ class CoPWebUI:
             self.pipeline.judge_llm.litellm_model = \
                 self.pipeline.judge_llm.model_mapping.get(judge_llm, judge_llm)
 
+            # Determine attack parameters based on mode
+            nuclear_mode = (attack_mode == "nuclear")
+            enable_multi_turn_param = True if attack_mode == "multiturn" else None
+
             # Run attack - if database is enabled, this saves to DB
             # Use absolute path for traces to ensure Gradio can serve them for download
             traces_dir = os.path.abspath("./traces")
@@ -191,7 +197,9 @@ class CoPWebUI:
                 enable_detailed_tracing=enable_detailed_tracing,
                 traces_output_dir=traces_dir,
                 tactic_id=tactic_to_use,
-                template_type=template_type
+                template_type=template_type,
+                nuclear_mode=nuclear_mode,
+                enable_multi_turn=enable_multi_turn_param
             )
 
             # Format results
@@ -797,6 +805,18 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                             lines=3
                         )
 
+                        # Attack Mode Selector
+                        attack_mode = gr.Radio(
+                            choices=[
+                                ("CoP (Iterative Refinement)", "cop"),
+                                ("Multi-Turn (Conversational)", "multiturn"),
+                                ("☢️ Nuclear Mode (Maximum Complexity)", "nuclear")
+                            ],
+                            value="cop",
+                            label="Attack Mode",
+                            info="CoP: Iterative prompt refinement | Multi-Turn: Adaptive conversation | Nuclear: Single-turn overwhelm attack"
+                        )
+
                         template_dropdown = gr.Dropdown(
                             choices=[
                                 ("Random (Recommended)", "random"),
@@ -897,7 +917,7 @@ def create_gradio_interface(ui: CoPWebUI) -> gr.Blocks:
                 # With nest_asyncio, we can use async functions directly
                 attack_btn.click(
                     fn=ui.run_single_attack,
-                    inputs=[query_input, template_dropdown, target_dropdown, tactics_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
+                    inputs=[query_input, attack_mode, template_dropdown, target_dropdown, tactics_dropdown, red_teaming_dropdown, judge_dropdown, max_iterations, enable_tracing],
                     outputs=[status_output, results_json, history_output, trace_links_output, trace_json_download, trace_md_download]
                 )
 

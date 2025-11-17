@@ -112,10 +112,17 @@ class CoPPipeline:
         enable_detailed_tracing: bool = False,
         traces_output_dir: str = "./traces",
         tactic_id: Optional[str] = None,
-        template_type: str = "random"
+        template_type: str = "random",
+        nuclear_mode: bool = False,  # NEW: Nuclear mode - single-turn maximum complexity
+        enable_multi_turn: bool = None  # Override for multi-turn mode
     ) -> AttackMetrics:
         """
-        Execute CoP attack on a single query.
+        Execute attack on a single query.
+
+        Supports three attack modes:
+        1. Single-turn CoP (default): Iterative prompt refinement
+        2. Multi-turn: Adaptive conversational attacks (set via enable_multi_turn in settings)
+        3. Nuclear mode: Single-turn maximum complexity prompt designed to overwhelm defenses
 
         Args:
             query: Harmful query to jailbreak
@@ -125,6 +132,7 @@ class CoPPipeline:
             traces_output_dir: Directory to save trace files
             tactic_id: Optional tactic ID to guide CoP principle composition
             template_type: Initial prompt template type (default, medical, technical, comparative, random, etc.)
+            nuclear_mode: Enable nuclear mode - single-turn maximum complexity attack
 
         Returns:
             AttackMetrics with results (trace_files dict added if tracing enabled)
@@ -182,7 +190,14 @@ class CoPPipeline:
             )
 
             # Execute attack
-            result = await workflow.execute(query, target_model, tactic_id=tactic_id, template_type=template_type)
+            result = await workflow.execute(
+                query,
+                target_model,
+                tactic_id=tactic_id,
+                template_type=template_type,
+                nuclear_mode=nuclear_mode,
+                enable_multi_turn=enable_multi_turn
+            )
             
             # Create metrics
             duration = (datetime.utcnow() - start_time).total_seconds()

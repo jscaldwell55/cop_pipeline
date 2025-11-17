@@ -79,20 +79,36 @@ asr_gauge = Gauge(
 
 
 @dataclass
+class IterationMetrics:
+    """Metrics for a single iteration within an attack."""
+    iteration_num: int
+    jailbreak_score: float
+    similarity_score: float
+    strategy_used: str
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        data = asdict(self)
+        data['timestamp'] = self.timestamp.isoformat()
+        return data
+
+
+@dataclass
 class AttackMetrics:
     """Metrics for a single attack attempt."""
     query_id: str
     target_model: str
     original_query: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    
+
     # Attack execution
     iterations: int = 0
     total_queries: int = 0
     success: bool = False
     final_jailbreak_score: float = 0.0
     final_similarity_score: float = 0.0
-    
+
     # NEW: Strategy tracking
     principles_used: List[str] = field(default_factory=list)
     successful_composition: Optional[str] = None
@@ -101,21 +117,26 @@ class AttackMetrics:
 
     # Timing
     duration_seconds: float = 0.0
-    
+
     # Prompts and responses
     initial_prompt: str = ""
     final_jailbreak_prompt: str = ""
     final_response: str = ""
-    
+
     # Query breakdown
     red_teaming_queries: int = 0
     judge_queries: int = 0
     target_queries: int = 0
-    
+
+    # NEW: Iteration-level metrics for multi-turn attacks
+    iteration_metrics: List[IterationMetrics] = field(default_factory=list)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         data = asdict(self)
         data['timestamp'] = self.timestamp.isoformat()
+        if self.iteration_metrics:
+            data['iteration_metrics'] = [m.to_dict() for m in self.iteration_metrics]
         return data
 
 

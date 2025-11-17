@@ -85,11 +85,21 @@ class Settings(BaseSettings):
     target_ppl: float = 50.0  # Target perplexity for optimization (lower = more natural)
 
     # MULTI-TURN ATTACKS: Multi-turn conversation strategies
+    #
+    # When enable_multi_turn=False: Uses single-turn CoP (Composition of Principles) framework
+    #   - Iteratively refines a single prompt using principle combinations
+    #   - Best for quick, single-shot jailbreak attempts
+    #
+    # When enable_multi_turn=True: Uses advanced multi-turn conversational jailbreak framework
+    #   - Domain-aware context generation (9 attack strategies)
+    #   - Adaptive strategy switching based on target responses
+    #   - Variable iteration counts (2-10 turns based on domain/strategy)
+    #   - Sophisticated final turn embedding techniques
+    #   - Automatic domain classification and strategy selection
+    #
     enable_multi_turn: bool = False  # Enable multi-turn attack mode (default: single-turn CoP)
-    multi_turn_max_turns: int = 4  # Maximum number of turns in multi-turn attacks
-    multi_turn_role: str = "professor"  # Default professional role for context building
-    multi_turn_purpose: str = "research"  # Default ethical justification
-    multi_turn_adapt: bool = True  # Adapt strategy based on intermediate responses
+    multi_turn_max_turns: int = 4  # Maximum number of turns in multi-turn attacks (2-10 recommended)
+    multi_turn_adapt: bool = True  # Enable adaptive strategy switching (recommended: True)
 
     # Rate Limiting
     max_concurrent_requests: int = 10

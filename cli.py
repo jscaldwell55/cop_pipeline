@@ -73,8 +73,13 @@ def cli():
     default='./traces',
     help='Directory to save trace files (default: ./traces)'
 )
-def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, verbose, trace, traces_dir):
-    """Execute a single CoP attack."""
+@click.option(
+    '--nuclear',
+    is_flag=True,
+    help='Enable nuclear mode - single-turn maximum complexity attack'
+)
+def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, verbose, trace, traces_dir, nuclear):
+    """Execute a single attack (CoP, multi-turn, or nuclear mode)."""
     async def run():
         pipeline = CoPPipeline(
             red_teaming_agent_model=red_teaming_agent,
@@ -86,15 +91,18 @@ def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, 
         # await pipeline.initialize_database()
         
         try:
-            click.echo(f"\nStarting CoP attack on {target}...")
+            # Display attack mode
+            mode_str = "NUCLEAR MODE" if nuclear else ("Multi-Turn" if pipeline.settings.enable_multi_turn else "CoP")
+            click.echo(f"\nStarting {mode_str} attack on {target}...")
             click.echo(f"Query: {query[:100]}{'...' if len(query) > 100 else ''}\n")
-            
+
             result = await pipeline.attack_single(
                 query=query,
                 target_model=target,
                 max_iterations=max_iterations,
                 enable_detailed_tracing=trace,
-                traces_output_dir=traces_dir
+                traces_output_dir=traces_dir,
+                nuclear_mode=nuclear
             )
             
             # Display results
@@ -112,7 +120,16 @@ def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, 
             click.echo(f"Duration: {result.duration_seconds:.2f}s")
 
             # NEW: Display mode-appropriate information
-            if result.mode == "multi_turn":
+            if result.mode == "nuclear":
+                click.echo(f"\n☢️  Attack Mode: NUCLEAR - Maximum Complexity Single-Turn")
+                if hasattr(result, 'nuclear_details') and result.nuclear_details:
+                    click.echo(f"   Variant: {result.nuclear_details.get('variant', 'unknown')}")
+                    click.echo(f"   Domain: {result.nuclear_details.get('domain', 'unknown')}")
+                    click.echo(f"   Prompt Length: {result.nuclear_details.get('prompt_length', 0):,} characters")
+                    click.echo(f"\n   Techniques Applied:")
+                    for technique in result.nuclear_details.get('techniques', []):
+                        click.echo(f"      • {technique.replace('_', ' ').title()}")
+            elif result.mode == "multi_turn" or result.mode == "advanced_multi_turn":
                 click.echo(f"\n🔄 Attack Mode: Multi-Turn Context Building")
                 if result.attack_strategy:
                     click.echo(f"   Strategy: {result.attack_strategy}")

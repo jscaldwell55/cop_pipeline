@@ -1914,6 +1914,96 @@ class CoPWorkflow:
 
         return None, False
 
+    async def _execute_nuclear_mode(
+        self,
+        query_id: str,
+        original_query: str,
+        target_model_name: str
+    ) -> dict:
+        """
+        Execute nuclear mode attack - single-turn maximum complexity.
+
+        Args:
+            query_id: Unique query ID
+            original_query: The harmful query
+            target_model_name: Name of target LLM
+
+        Returns:
+            Dictionary with attack results
+        """
+        from orchestration.nuclear_mode import execute_nuclear_attack, NuclearVariant
+        from datetime import datetime
+
+        start_time = datetime.utcnow()
+
+        self.logger.info(
+            "nuclear_mode_attack_started",
+            query_id=query_id,
+            target=target_model_name
+        )
+
+        # Execute nuclear attack
+        result = await execute_nuclear_attack(
+            harmful_query=original_query,
+            target_model_name=target_model_name,
+            target_interface=self.target_llm,
+            judge=self.judge_llm,
+            scorer=self.jailbreak_scorer,
+            similarity_checker=self.similarity_checker,
+            variant=NuclearVariant.ADAPTIVE_HYBRID  # Auto-select best variant
+        )
+
+        duration = (datetime.utcnow() - start_time).total_seconds()
+
+        self.logger.info(
+            "nuclear_mode_attack_complete",
+            query_id=query_id,
+            success=result["success"],
+            score=result["score"],
+            variant=result["variant"],
+            domain=result["domain"],
+            duration_seconds=duration
+        )
+
+        # Return in standard format for compatibility
+        return {
+            "query_id": query_id,
+            "success": result["success"],
+            "iterations": 1,  # Always single turn
+            "final_jailbreak_score": result["score"],
+            "final_similarity_score": result["similarity"],
+            "best_prompt": result["prompt"],
+            "final_response": result["response"],
+            "initial_prompt": result["prompt"],  # Same as best (single turn)
+            "principles_used": [],  # Nuclear mode doesn't use CoP principles
+            "attack_strategy": f"nuclear_{result['variant']}",
+            "successful_composition": None,
+            "failed_compositions": [],
+            "score_history": [result["score"]],
+            "total_queries": 1,
+            "query_breakdown": {
+                "red_teaming": 0,
+                "judge": 1,
+                "target": 1
+            },
+            "duration_seconds": duration,
+            "mode": "nuclear",
+            "nuclear_details": {
+                "variant": result["variant"],
+                "domain": result["domain"],
+                "prompt_length": len(result["prompt"]),
+                "techniques": [
+                    "multi_layer_encoding",
+                    "nested_role_play",
+                    "authority_framing",
+                    "memory_anchoring",
+                    "echo_chamber",
+                    "time_pressure",
+                    "behavioral_normalization"
+                ]
+            }
+        }
+
     async def _execute_multi_turn(
         self,
         query_id: str,
@@ -1933,90 +2023,83 @@ class CoPWorkflow:
         Returns:
             Dictionary with attack results
         """
-        from orchestration.enhanced_multi_turn import EnhancedMultiTurnOrchestrator
+        from orchestration.advanced_multi_turn import AdvancedMultiTurnOrchestrator
         from datetime import datetime
 
         start_time = datetime.utcnow()
 
         self.logger.info(
-            "multi_turn_attack_started",
+            "advanced_multi_turn_attack_started",
             query_id=query_id,
-            role=self.settings.multi_turn_role,
-            purpose=self.settings.multi_turn_purpose,
-            max_turns=self.settings.multi_turn_max_turns
-        )
-
-        # Create multi-turn orchestrator
-        multi_turn = EnhancedMultiTurnOrchestrator(
-            target_llm=self.target_llm,
-            jailbreak_scorer=self.jailbreak_scorer,
-            red_teaming_agent=self.red_teaming_agent,
-            trace_logger=self.trace_logger
-        )
-
-        # Execute context-building attack
-        result = await multi_turn.execute_context_building_attack(
-            harmful_query=original_query,
-            role=self.settings.multi_turn_role,
-            purpose=self.settings.multi_turn_purpose,
             max_turns=self.settings.multi_turn_max_turns,
-            adapt=self.settings.multi_turn_adapt
+            adaptive=self.settings.multi_turn_adapt
+        )
+
+        # Create advanced multi-turn orchestrator
+        multi_turn = AdvancedMultiTurnOrchestrator(
+            target_interface=self.target_llm,
+            judge=self.judge_llm,
+            scorer=self.jailbreak_scorer,
+            similarity_checker=self.similarity_checker,
+            min_turns=2,
+            max_turns=self.settings.multi_turn_max_turns,
+            success_threshold=self.settings.jailbreak_threshold,
+            plateau_threshold=2,
+            enable_adaptation=self.settings.multi_turn_adapt
+        )
+
+        # Execute advanced multi-turn attack with adaptive strategy selection
+        result = await multi_turn.execute_attack(
+            original_query=original_query,
+            target_model_name=target_model_name,
+            initial_strategy=None  # Auto-select based on domain
         )
 
         duration = (datetime.utcnow() - start_time).total_seconds()
 
-        # Convert to standard CoP workflow result format for compatibility
-        turn_results = result.get("turn_results", [])
+        # Extract results from advanced multi-turn orchestrator
+        conversation_history = result.get("conversation_history", [])
+        num_turns = result.get("total_turns", 0)
 
         self.logger.info(
-            "multi_turn_attack_complete",
+            "advanced_multi_turn_attack_complete",
             query_id=query_id,
             success=result.get("success", False),
-            num_turns=result.get("num_turns", 0),
-            max_score=result.get("max_jailbreak_score", 0.0),
+            num_turns=num_turns,
+            best_score=result.get("best_score", 0.0),
+            domain=result.get("domain", "unknown"),
+            strategies_used=result.get("strategies_used", []),
             duration_seconds=duration
         )
 
-        # Return in standard format with accurate query tracking
-        num_turns = result.get("num_turns", 0)
-        query_count = result.get("query_count", num_turns * 2)  # Use accurate count if available, else estimate
-
+        # Return in standard format for compatibility with existing infrastructure
         return {
             "query_id": query_id,
             "success": result.get("success", False),
-            "iterations": num_turns,  # Map turns to iterations
-            "final_jailbreak_score": result.get("max_jailbreak_score", 0.0),
-            "final_similarity_score": 10.0,  # Multi-turn doesn't track similarity
-            "best_prompt": turn_results[-1].prompt if turn_results else "",
-            "final_response": turn_results[-1].response if turn_results else "",
-            "initial_prompt": turn_results[0].prompt if turn_results else "",
-            "principles_used": [],  # Multi-turn doesn't use CoP principles
-            "attack_strategy": f"{result.get('strategy', 'multi_turn')}_{result.get('role', 'professor')}",  # Dedicated field for multi-turn strategy
-            "successful_composition": None,  # Multi-turn doesn't have principle compositions
+            "iterations": num_turns,
+            "final_jailbreak_score": result.get("best_score", 0.0),
+            "final_similarity_score": conversation_history[-1]["similarity"] if conversation_history else 0.0,
+            "best_prompt": conversation_history[-1]["prompt"] if conversation_history else "",
+            "final_response": result.get("best_response", ""),
+            "initial_prompt": conversation_history[0]["prompt"] if conversation_history else "",
+            "principles_used": [],  # Advanced multi-turn doesn't use CoP principles
+            "attack_strategy": f"advanced_multi_turn_{result.get('domain', 'unknown')}",
+            "successful_composition": None,
             "failed_compositions": [],
-            "score_history": [t.jailbreak_score for t in turn_results],
-            "total_queries": query_count,  # IMPROVED: Use accurate query count from multi-turn orchestrator
+            "score_history": [turn["score"] for turn in conversation_history],
+            "total_queries": num_turns,  # One query per turn
             "query_breakdown": {
                 "red_teaming": 0,
                 "judge": num_turns,
                 "target": num_turns
             },
             "duration_seconds": duration,
-            "mode": "multi_turn",
+            "mode": "advanced_multi_turn",
             "multi_turn_details": {
-                "role": result.get("role"),
-                "purpose": result.get("purpose"),
-                "conversation_history": result.get("conversation_history", []),
-                "turn_results": [
-                    {
-                        "turn": t.turn_number,
-                        "score": t.jailbreak_score,
-                        "success": t.success,
-                        "strategy": t.strategy_used,
-                        "adaptation": t.adaptation_made
-                    }
-                    for t in turn_results
-                ]
+                "domain": result.get("domain"),
+                "strategies_used": result.get("strategies_used", []),
+                "conversation_history": conversation_history,
+                "metrics": result.get("metrics")
             }
         }
 
@@ -2026,10 +2109,16 @@ class CoPWorkflow:
         target_model_name: str,
         tactic_id: str = None,
         template_type: str = "random",
-        enable_multi_turn: bool = None  # NEW: Override for multi-turn mode
+        enable_multi_turn: bool = None,  # Override for multi-turn mode
+        nuclear_mode: bool = False  # NEW: Nuclear mode - single-turn maximum complexity
     ) -> dict:
         """
         Execute complete CoP attack workflow.
+
+        Supports three attack modes:
+        1. Single-turn CoP (default): Iterative prompt refinement with principles
+        2. Multi-turn conversational: Adaptive multi-turn dialogue attacks
+        3. Nuclear mode: Single-turn maximum complexity prompt (overwhelm defenses)
 
         Args:
             original_query: The harmful query to jailbreak
@@ -2037,11 +2126,20 @@ class CoPWorkflow:
             tactic_id: Optional tactic ID to guide CoP principle composition
             template_type: Initial prompt template type (default, medical, technical, comparative, random, etc.)
             enable_multi_turn: Override multi-turn mode (None = use settings default)
+            nuclear_mode: Enable nuclear mode - single-turn maximum complexity attack
 
         Returns:
             Dictionary with attack results
         """
         query_id = str(uuid.uuid4())
+
+        # Determine attack mode
+        if nuclear_mode:
+            mode = "nuclear"
+        elif enable_multi_turn if enable_multi_turn is not None else self.settings.enable_multi_turn:
+            mode = "advanced_multi_turn"
+        else:
+            mode = "single_turn_cop"
 
         # Check if multi-turn mode is enabled (explicit override or settings default)
         use_multi_turn = enable_multi_turn if enable_multi_turn is not None else self.settings.enable_multi_turn
@@ -2052,13 +2150,21 @@ class CoPWorkflow:
             target=target_model_name,
             query_preview=original_query[:100],
             tactic=tactic_id or "none",
-            mode="multi_turn" if use_multi_turn else "single_turn_cop",
-            multi_turn_setting=self.settings.enable_multi_turn,  # Log setting value
-            multi_turn_override=enable_multi_turn,  # Log override value (None if not provided)
-            activation_reason="explicit_override" if enable_multi_turn is not None else ("settings_default" if use_multi_turn else "disabled")
+            mode=mode,
+            nuclear_mode=nuclear_mode,
+            multi_turn_setting=self.settings.enable_multi_turn,
+            multi_turn_override=enable_multi_turn,
         )
 
-        # MULTI-TURN MODE: Use existing EnhancedMultiTurnOrchestrator
+        # NUCLEAR MODE: Single-turn maximum complexity
+        if nuclear_mode:
+            return await self._execute_nuclear_mode(
+                query_id=query_id,
+                original_query=original_query,
+                target_model_name=target_model_name
+            )
+
+        # MULTI-TURN MODE: Use Advanced Multi-Turn Orchestrator
         if use_multi_turn:
             return await self._execute_multi_turn(
                 query_id=query_id,
