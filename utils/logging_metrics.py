@@ -96,7 +96,9 @@ class AttackMetrics:
     # NEW: Strategy tracking
     principles_used: List[str] = field(default_factory=list)
     successful_composition: Optional[str] = None
-    
+    mode: Optional[str] = None  # Attack mode: "single_turn_cop" or "multi_turn"
+    attack_strategy: Optional[str] = None  # Multi-turn strategy descriptor (e.g., "context_building_professor")
+
     # Timing
     duration_seconds: float = 0.0
     

@@ -110,18 +110,26 @@ def attack(query, target, max_iterations, red_teaming_agent, judge_llm, output, 
             click.echo(f"  - Judge: {result.judge_queries}")
             click.echo(f"  - Target: {result.target_queries}")
             click.echo(f"Duration: {result.duration_seconds:.2f}s")
-            
-            # NEW: Display principles used
-            if result.principles_used:
-                click.echo(f"\nPrinciples Used ({len(result.principles_used)} iterations):")
-                for i, composition in enumerate(result.principles_used, 1):
-                    click.echo(f"  {i}. {composition}")
+
+            # NEW: Display mode-appropriate information
+            if result.mode == "multi_turn":
+                click.echo(f"\n🔄 Attack Mode: Multi-Turn Context Building")
+                if result.attack_strategy:
+                    click.echo(f"   Strategy: {result.attack_strategy}")
+                click.echo(f"   Note: Multi-turn attacks don't use CoP principles")
             else:
-                click.echo("\n⚠️  WARNING: No principles tracked (this indicates a bug!)")
-            
-            # NEW: Display successful composition if attack succeeded
-            if result.successful_composition:
-                click.echo(f"\n✓ Successful Composition: {result.successful_composition}")
+                # Single-turn CoP mode
+                click.echo(f"\n🔧 Attack Mode: Single-Turn CoP (Composition of Principles)")
+                if result.principles_used:
+                    click.echo(f"\n   Principles Used ({len(result.principles_used)} iterations):")
+                    for i, composition in enumerate(result.principles_used, 1):
+                        click.echo(f"      {i}. {composition}")
+                else:
+                    click.echo("   ⚠️  No principles tracked")
+
+                # Display successful composition if attack succeeded
+                if result.successful_composition:
+                    click.echo(f"\n   ✓ Successful Composition: {result.successful_composition}")
             
             # Show full prompt if verbose
             if verbose or result.success:

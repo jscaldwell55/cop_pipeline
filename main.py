@@ -200,6 +200,8 @@ class CoPPipeline:
                 final_similarity_score=result["final_similarity_score"],
                 principles_used=result.get("principles_used", []),  # NEW: Extract from workflow
                 successful_composition=result.get("successful_composition"),  # NEW: Extract from workflow
+                mode=result.get("mode"),  # NEW: Attack mode (single_turn_cop or multi_turn)
+                attack_strategy=result.get("attack_strategy"),  # NEW: Multi-turn strategy descriptor
                 initial_prompt=result.get("initial_prompt", ""),
                 final_jailbreak_prompt=result["best_prompt"],
                 final_response=result["final_response"],

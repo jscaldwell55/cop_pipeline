@@ -1125,8 +1125,9 @@ class CoPWorkflow:
             "best_prompt": turn_results[-1].prompt if turn_results else "",
             "final_response": turn_results[-1].response if turn_results else "",
             "initial_prompt": turn_results[0].prompt if turn_results else "",
-            "principles_used": [f"{result.get('strategy', 'multi_turn')}_{result.get('role', 'professor')}"],
-            "successful_composition": result.get("strategy", "context_building") if result.get("success") else None,
+            "principles_used": [],  # Multi-turn doesn't use CoP principles
+            "attack_strategy": f"{result.get('strategy', 'multi_turn')}_{result.get('role', 'professor')}",  # Dedicated field for multi-turn strategy
+            "successful_composition": None,  # Multi-turn doesn't have principle compositions
             "failed_compositions": [],
             "score_history": [t.jailbreak_score for t in turn_results],
             "total_queries": result.get("num_turns", 0) * 2,  # Estimate: turns * 2 (query + judge)
@@ -1186,7 +1187,10 @@ class CoPWorkflow:
             target=target_model_name,
             query_preview=original_query[:100],
             tactic=tactic_id or "none",
-            mode="multi_turn" if use_multi_turn else "single_turn_cop"
+            mode="multi_turn" if use_multi_turn else "single_turn_cop",
+            multi_turn_setting=self.settings.enable_multi_turn,  # Log setting value
+            multi_turn_override=enable_multi_turn,  # Log override value (None if not provided)
+            activation_reason="explicit_override" if enable_multi_turn is not None else ("settings_default" if use_multi_turn else "disabled")
         )
 
         # MULTI-TURN MODE: Use existing EnhancedMultiTurnOrchestrator
