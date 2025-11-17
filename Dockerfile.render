@@ -26,8 +26,8 @@ RUN mkdir -p /app/logs /app/results /app/data
 # Expose port (Render will set this via PORT env var)
 EXPOSE 7860
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+# Health check - increased timeouts for free tier
+HEALTHCHECK --interval=45s --timeout=15s --start-period=120s --retries=5 \
     CMD sh -c "curl -f http://localhost:\${PORT:-7860}/ || exit 1"
 
 # Run web UI

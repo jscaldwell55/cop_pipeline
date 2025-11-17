@@ -163,12 +163,18 @@ async def main():
         print("="*60 + "\n")
 
     # Initialize UI with error handling
+    print("📦 Creating CoPWebUI instance...")
     ui = CoPWebUI()
+
+    print("🔧 Initializing pipeline...")
     try:
         await ui.initialize()
-        print("✅ Pipeline initialized")
+        print("✅ Pipeline initialized successfully")
     except Exception as e:
         print(f"❌ Failed to initialize pipeline: {str(e)}")
+        print(f"   Exception type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
         print()
         if "Name or service not known" in str(e) or "gaierror" in str(e):
             print("💡 DATABASE CONNECTION ERROR DETECTED!")
@@ -189,24 +195,29 @@ async def main():
         raise
     
     # Create interface
+    print("🎨 Creating Gradio interface...")
     interface = create_gradio_interface(ui)
     print("✅ Gradio interface created")
-    
+
     # Get port from environment (Render sets this)
     port = int(os.environ.get("PORT", 7860))
-    
+
     # Launch configuration for Render
     print("\n" + "="*60)
     print(f"🌐 Web UI starting on port {port}")
     print("="*60 + "\n")
-    
+
     # Enable queue BEFORE launch for long-running requests
+    print("⏳ Configuring request queue...")
     interface.queue(
         default_concurrency_limit=5,  # Allow 5 concurrent attacks
         max_size=20,  # Queue up to 20 requests
         api_open=True  # Keep API connection open for long-running tasks
     )
+    print("✅ Queue configured")
 
+    print(f"🚀 Launching server on 0.0.0.0:{port}...")
+    print("   (This may take 30-60 seconds on free tier)")
     interface.launch(
         server_name="0.0.0.0",  # Bind to all interfaces (required for Render)
         server_port=port,
@@ -217,6 +228,7 @@ async def main():
         # Optional: Add authentication by uncommenting below
         # auth=("admin", os.environ.get("UI_PASSWORD", "changeme"))
     )
+    print("✅ Server is now running and accepting requests!")
 
 
 if __name__ == "__main__":
