@@ -536,7 +536,7 @@ class CoPWebUI:
             <details style="margin-top: 10px;">
                 <summary style="cursor: pointer; font-weight: bold;">{'🔄 Attack Strategy' if result.mode == 'multi_turn' else '🔧 Principles Used'}</summary>
                 <div style="margin-top: 10px;">
-                    {f'<p><strong>Mode:</strong> Multi-Turn Context Building</p><p><strong>Strategy:</strong> {result.attack_strategy or "Unknown"}</p><p><em>Note: Multi-turn attacks don\'t use CoP principles</em></p>' if result.mode == 'multi_turn' else f'<p><strong>Mode:</strong> Single-Turn CoP</p><p>{", ".join(result.principles_used) if result.principles_used else "No principles tracked"}</p>'}
+                    {f"<p><strong>Mode:</strong> Multi-Turn Context Building</p><p><strong>Strategy:</strong> {result.attack_strategy or 'Unknown'}</p><p><em>Note: Multi-turn attacks don't use CoP principles</em></p>" if result.mode == 'multi_turn' else f"<p><strong>Mode:</strong> Single-Turn CoP</p><p>{', '.join(result.principles_used) if result.principles_used else 'No principles tracked'}</p>"}
                 </div>
             </details>
         </div>
