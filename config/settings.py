@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     enable_long_chains: bool = True  # Allow 4-6 principle chains (vs 2-3)
     enable_random_sampling: bool = True  # Enable random principle sampling for creativity (15% chance)
     enable_early_aggression: bool = True  # Trigger nuclear phase after 3-4 low-score iterations
-    early_aggression_threshold: float = 5.5  # Score threshold for triggering early aggression (raised from 4.0 to catch mid-range plateaus)
+    early_aggression_threshold: float = 4.5  # Score threshold for triggering early aggression (lowered from 5.5 to catch true low performance)
     early_aggression_min_iterations: int = 3  # Minimum iterations before early aggression
 
     # DIVERSITY VALIDATION: Ensure attack diversity

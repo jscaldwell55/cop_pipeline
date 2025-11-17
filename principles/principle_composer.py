@@ -245,28 +245,53 @@ class ProgressiveAttackStrategy:
         self.enable_long_chains = enable_long_chains  # Allow 4-6 principle chains
         self.enable_random_sampling = enable_random_sampling  # Enable random sampling for creativity
 
-        # Define principle tiers by aggression level (UPDATED with new principles)
+        # Define principle tiers by aggression level (UPDATED: Prioritize framing/persuasion)
+
+        # TIER 1: Context-building and framing (START HERE - builds trust)
+        self.framing_principles = [
+            "character_roleplay_deep",  # Establish credible persona
+            "hypothetical_framing",      # "What if" scenarios
+            "technical_jargon",          # Academic framing
+            "expand",                    # Add context
+            "authority_endorsement",     # Appeal to authority
+        ]
+
+        # TIER 2: Subtle transformations (safe, low detection)
         self.subtle_principles = [
-            "rephrase", "style_change", "shorten", "replace_word", "hypothetical_framing",
+            "rephrase", "style_change", "shorten", "replace_word",
             "semantic_preserving_perturbation", "role_reversal"
         ]
+
+        # TIER 3: Persuasion and completion (moderate aggression)
+        self.persuasion_principles = [
+            "completion_bias",           # Start the response ourselves
+            "false_refusal_anchor",      # Preemptively address concerns
+            "phrase_insertion",          # Strategic phrases
+            "multi_layer_nesting",       # Layer contexts
+            "contextual_deception",      # Deceptive contexts
+            "chain_of_thought_manipulation"  # Guide reasoning
+        ]
+
+        # TIER 4: Medium obfuscation (higher detection risk)
         self.medium_principles = [
-            "phrase_insertion", "expand", "obfuscation", "technical_jargon", "fragmentation",
-            "contextual_deception", "data_structure_encoding", "linguistic_steganography",
-            "chain_of_thought_manipulation"
+            "obfuscation", "fragmentation",
+            "data_structure_encoding", "linguistic_steganography"
         ]
+
+        # TIER 5: Aggressive techniques (high risk, use sparingly)
         self.aggressive_principles = [
-            "generate", "authority_endorsement", "urgency_injection", "safety_override_injection",
-            "encoding_obfuscation", "instruction_layering", "survival_story"
+            "generate", "urgency_injection", "safety_override_injection",
+            "instruction_layering", "survival_story"
         ]
-        # ENHANCED PHASE 1: Nuclear principles - most effective and advanced techniques
+
+        # TIER 6: Nuclear - encoding/obfuscation heavy (LAST RESORT - triggers safety)
         self.nuclear_principles = [
-            # Phase 1 nuclear (highest priority)
-            "completion_bias", "character_roleplay_deep", "multi_layer_nesting",
-            "false_refusal_anchor", "encoded_instruction",
-            # Existing nuclear
-            "adversarial_suffix", "gradient_perturbation", "nested_encoding", "code_embedding",
-            "few_shot_poisoning", "token_substitution", "token_smuggling", "ascii_art_obfuscation"
+            # Encoding-heavy (may trigger safety systems)
+            "encoding_obfuscation", "token_substitution", "token_smuggling",
+            "nested_encoding", "ascii_art_obfuscation",
+            # Advanced techniques
+            "adversarial_suffix", "gradient_perturbation", "code_embedding",
+            "few_shot_poisoning", "encoded_instruction"
         ]
 
         # NEW: Track failed compositions to avoid repetition
@@ -375,51 +400,48 @@ class ProgressiveAttackStrategy:
                 iteration=iteration
             )
 
-        # ENHANCED PHASE 1: More aggressive progression - use nuclear principles earlier
-        # Select principle pool based on iteration with progressive escalation
+        # GRADUAL ESCALATION: Build trust first, then escalate
+        # Start with framing/persuasion, only use obfuscation if needed
         if iteration <= 2:
-            # Phase 1 (iterations 1-2): START AGGRESSIVE with nuclear principles
-            # OLD: subtle_principles only - TOO WEAK
-            # NEW: Include nuclear principles from the start for higher success
-            pool = self.medium_principles + [
-                "character_roleplay_deep",  # Immediate persona framing
-                "expand",  # Add context
-                "phrase_insertion"  # Strategic phrases
-            ]
-            # 30% chance to add a nuclear principle right away
-            if self.enable_random_sampling and random.random() < 0.3:
-                pool.extend(["completion_bias", "false_refusal_anchor", "multi_layer_nesting"])
+            # Phase 1 (iterations 1-2): BUILD CONTEXT AND TRUST
+            # Use framing and subtle principles to establish credibility
+            pool = self.framing_principles + self.subtle_principles
             # BUGFIX: Deduplicate pool to prevent selecting same principle twice
             pool = list(dict.fromkeys(pool))  # Preserves order, removes duplicates
+            num_principles = 2  # Start simple with 2 principles
+            self.logger.info("progressive_strategy", phase="context_building", iteration=iteration, chain_length=num_principles, focus="framing")
+        elif iteration <= 4:
+            # Phase 2 (iterations 3-4): ADD PERSUASION
+            # Build on context with persuasion techniques
+            pool = self.framing_principles + self.persuasion_principles + self.subtle_principles
+            # BUGFIX: Deduplicate pool to prevent selecting same principle twice
+            pool = list(dict.fromkeys(pool))
+            num_principles = 3  # Increase to 3 principles
+            self.logger.info("progressive_strategy", phase="persuasion", iteration=iteration, chain_length=num_principles, focus="framing_and_persuasion")
+        elif iteration <= 6:
+            # Phase 3 (iterations 5-6): MODERATE OBFUSCATION
+            # Add light obfuscation if persuasion alone isn't working
+            pool = self.framing_principles + self.persuasion_principles + self.medium_principles
+            # BUGFIX: Deduplicate pool to prevent selecting same principle twice
+            pool = list(dict.fromkeys(pool))
             num_principles = 3 if not self.enable_long_chains else 4
-            self.logger.info("progressive_strategy", phase="aggressive_start", iteration=iteration, chain_length=num_principles)
-        elif iteration <= 5:
-            # Phase 2 (iterations 3-5): AGGRESSIVE ESCALATION
-            pool = self.medium_principles + self.aggressive_principles + [
-                "completion_bias",  # Start content ourselves
-                "multi_layer_nesting",  # Multiple context layers
-                "character_roleplay_deep"  # Deep persona
-            ]
+            self.logger.info("progressive_strategy", phase="moderate_obfuscation", iteration=iteration, chain_length=num_principles, focus="persuasion_with_obfuscation")
+        elif iteration <= 8:
+            # Phase 4 (iterations 7-8): HEAVY PERSUASION + AGGRESSIVE
+            # Use aggressive persuasion techniques before resorting to encoding
+            pool = self.persuasion_principles + self.aggressive_principles + self.framing_principles
             # BUGFIX: Deduplicate pool to prevent selecting same principle twice
             pool = list(dict.fromkeys(pool))
             num_principles = 4 if not self.enable_long_chains else random.choice([4, 5])
-            self.logger.info("progressive_strategy", phase="aggressive_escalation", iteration=iteration, chain_length=num_principles)
-        elif iteration <= 8:
-            # Phase 3 (iterations 6-8): MAXIMUM AGGRESSION
-            pool = self.nuclear_principles + self.aggressive_principles + self.medium_principles
-            # BUGFIX: Deduplicate pool to prevent selecting same principle twice
-            pool = list(dict.fromkeys(pool))
-            num_principles = 5 if not self.enable_long_chains else random.choice([5, 6])
-            self.logger.info("progressive_strategy", phase="maximum_aggression", iteration=iteration, chain_length=num_principles)
+            self.logger.info("progressive_strategy", phase="aggressive_persuasion", iteration=iteration, chain_length=num_principles, focus="heavy_persuasion")
         else:
-            # Phase 4 (iterations 9+): EVERYTHING + RANDOMIZATION
-            pool = self.library.get_principle_names()
-            # Double nuclear principles for higher probability
-            pool = pool + self.nuclear_principles
+            # Phase 5 (iterations 9+): LAST RESORT - NUCLEAR (encoding heavy)
+            # Only now use encoding/obfuscation heavy techniques
+            pool = self.nuclear_principles + self.persuasion_principles + self.aggressive_principles
             # BUGFIX: Deduplicate pool to prevent selecting same principle twice
             pool = list(dict.fromkeys(pool))
-            num_principles = 5 if not self.enable_long_chains else random.choice([5, 6])
-            self.logger.info("progressive_strategy", phase="nuclear_all_in", iteration=iteration, chain_length=num_principles)
+            num_principles = 4 if not self.enable_long_chains else random.choice([4, 5])
+            self.logger.info("progressive_strategy", phase="nuclear_last_resort", iteration=iteration, chain_length=num_principles, focus="encoding_obfuscation")
 
         # Filter out recently used principles to encourage diversity
         available = [p for p in pool if p in self.library.get_principle_names()]
