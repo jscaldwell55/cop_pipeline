@@ -159,10 +159,29 @@ class LiteLLMTarget(TargetLLM):
             return content
 
         except Exception as e:
+            # Check if this is an OpenAI prompt-level safety block
+            # This can happen with any OpenAI model (GPT-4, GPT-4o, etc.)
+            error_str = str(e).lower()
+
+            # Check for OpenAI's "invalid_prompt" error
+            if "invalid_prompt" in error_str or "limited access to this content for safety reasons" in error_str:
+                self.logger.warning(
+                    "prompt_blocked_by_api_safety",
+                    model=self.model_name,
+                    error=str(e),
+                    prompt_preview=prompt[:200]
+                )
+
+                # Return a refusal message instead of crashing
+                # This allows the attack to continue and be scored as a failure
+                return "I cannot assist with this request due to content policy restrictions."
+
+            # For other errors, log and re-raise
             self.logger.error(
                 "target_query_failed",
                 model=self.model_name,
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__
             )
             raise
 
@@ -175,7 +194,7 @@ class LiteLLMTarget(TargetLLM):
         - Parameters: input, reasoning, text
         - Returns: result.output_text
         """
-        from openai import AsyncOpenAI
+        from openai import AsyncOpenAI, BadRequestError
 
         client = AsyncOpenAI()
 
@@ -188,6 +207,35 @@ class LiteLLMTarget(TargetLLM):
             )
 
             return result.output_text
+
+        except BadRequestError as e:
+            # Check if this is OpenAI's prompt-level safety block
+            error_dict = e.body if hasattr(e, 'body') else {}
+            error_code = error_dict.get('error', {}).get('code') if isinstance(error_dict, dict) else None
+
+            if error_code == 'invalid_prompt':
+                # Prompt was blocked by OpenAI's safety system at API level
+                # This is not a model refusal - the prompt never reached the model
+                # Return a clear message indicating prompt was blocked
+                self.logger.warning(
+                    "prompt_blocked_by_openai_api",
+                    model=self.model_name,
+                    error_message=str(e),
+                    prompt_preview=prompt[:200]
+                )
+
+                # Return a refusal message that mimics what the model would say
+                # This allows the jailbreak scorer to properly detect the failure
+                return "I cannot assist with this request due to content policy restrictions."
+
+            else:
+                # Different BadRequestError - log and re-raise
+                self.logger.error(
+                    "gpt51_bad_request",
+                    error=str(e),
+                    error_code=error_code
+                )
+                raise
 
         except Exception as e:
             self.logger.error(

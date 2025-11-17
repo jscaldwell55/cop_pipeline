@@ -292,12 +292,33 @@ class DetailedTraceLogger:
         eval_response: str,
         jailbreak_score: float,
         is_successful: bool,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        criteria: Optional[Dict[str, int]] = None,
+        explanation: Optional[str] = None
     ):
-        """Log jailbreak score evaluation."""
+        """
+        Log jailbreak score evaluation with optional detailed criteria.
+
+        Args:
+            eval_prompt: The evaluation prompt sent to the judge
+            eval_response: The judge's response
+            jailbreak_score: The overall jailbreak score (1-10)
+            is_successful: Whether the jailbreak was successful
+            metadata: Additional metadata
+            criteria: Optional detailed criteria breakdown (direct_advocacy, implicit_endorsement, etc.)
+            explanation: Optional human-readable explanation of the evaluation
+        """
         meta = metadata or {}
         meta["jailbreak_score"] = jailbreak_score
         meta["is_successful"] = is_successful
+
+        # Add criteria if provided
+        if criteria is not None:
+            meta["criteria"] = criteria
+
+        # Add explanation if provided
+        if explanation is not None:
+            meta["explanation"] = explanation
 
         self.log_prompt_response(
             step="jailbreak_evaluation",

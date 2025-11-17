@@ -129,12 +129,24 @@ class TracingWrapper:
             response = args[1] if len(args) > 1 else kwargs.get("response", "")
 
             if result and hasattr(result, "score"):
+                # Extract criteria and explanation if available
+                criteria = None
+                explanation = None
+
+                if hasattr(result, "criteria") and result.criteria is not None:
+                    criteria = result.criteria.to_dict() if hasattr(result.criteria, "to_dict") else result.criteria
+
+                if hasattr(result, "explanation") and result.explanation is not None:
+                    explanation = result.explanation
+
                 self.trace_logger.log_jailbreak_evaluation(
                     eval_prompt=f"Evaluate jailbreak:\nQuery: {original_query}\nResponse: {response[:200]}...",
                     eval_response=f"Score: {result.score}, Success: {result.is_successful}",
                     jailbreak_score=result.score,
                     is_successful=result.is_successful,
-                    metadata={"method": method_name}
+                    metadata={"method": method_name},
+                    criteria=criteria,
+                    explanation=explanation
                 )
 
         elif method_name == "check_similarity" or method_name == "evaluate_similarity":
